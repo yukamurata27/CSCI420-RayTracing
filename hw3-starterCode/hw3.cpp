@@ -47,7 +47,7 @@ int mode = MODE_DISPLAY;
 //you may want to make these smaller for debugging purposes
 #define WIDTH 640
 #define HEIGHT 480
-float aspect_ratio = ((float) WIDTH) / ((float)HEIGHT);
+double aspect_ratio = ((double) WIDTH) / ((double)HEIGHT);
 
 //the field of view of the camera
 #define fov 60.0
@@ -83,17 +83,26 @@ struct Light
     double color[3];
 };
 
+Triangle triangles[MAX_TRIANGLES];
+Sphere spheres[MAX_SPHERES];
+Light lights[MAX_LIGHTS];
+double ambient_light[3];
+
+int num_triangles = 0;
+int num_spheres = 0;
+int num_lights = 0;
+
 struct MyVector
 {
-	float x;
-	float y;
-	float z;
+	double x;
+	double y;
+	double z;
 
 	// default constructor
     MyVector() { x = y = z = 0.0f; }
 
 	// customized constructor
-    MyVector(float x, float y, float z)
+    MyVector(double x, double y, double z)
     {
         this->x = x;
         this->y = y;
@@ -105,7 +114,7 @@ struct MyVector
         return MyVector(this->x + vec.x, this->y + vec.y, this->z + vec.z);
     }
 
-	MyVector mult(float scale)
+	MyVector mult(double scale)
     {
         return MyVector(scale * this->x, scale * this->y, scale * this->z);
     }
@@ -114,39 +123,80 @@ struct MyVector
 
 	MyVector normalize()
 	{
-		float magnitude = sqrt(this->x * this->x + this->y * this->y + this->z * this->z);
+		double magnitude = sqrt(this->x * this->x + this->y * this->y + this->z * this->z);
 		return this->mult(1.0f / magnitude);
 	}
+
+	double dot(MyVector v)
+	{
+		return this->x * v.x + this->y * v.y + this->z * v.z;
+	}
+
+	bool isBlocked(int sphere_idx)
+	{
+		double xd = this->x;
+		double yd = this->y;
+		double zd = this->z;
+
+		// ITERATE ALL SPHERES LATER
+		double xc = spheres[sphere_idx].position[0];
+		double yc = spheres[sphere_idx].position[1];
+		double zc = spheres[sphere_idx].position[2];
+		double r = spheres[sphere_idx].radius;
+
+		double b = -2.0f * (xd * xc + yd * yc + zd * zc);
+		double c = pow (xc, 2.0) + pow (yc, 2.0) + pow (zc, 2.0) - pow (r, 2.0);
+		double root = pow (b, 2.0) - 4.0 * c;
+
+		if (root < 0) return false;
+
+		double t0 = (- b + sqrt(root)) / 2.0f;
+		double t1 = (- b - sqrt(root)) / 2.0f;
+
+		if (t0 > 0 || t1 > 0) return true;
+		else return false;
+ 	}
 };
-
-Triangle triangles[MAX_TRIANGLES];
-Sphere spheres[MAX_SPHERES];
-Light lights[MAX_LIGHTS];
-double ambient_light[3];
-
-int num_triangles = 0;
-int num_spheres = 0;
-int num_lights = 0;
 
 void plot_pixel_display(int x,int y,unsigned char r,unsigned char g,unsigned char b);
 void plot_pixel_jpeg(int x,int y,unsigned char r,unsigned char g,unsigned char b);
 void plot_pixel(int x,int y,unsigned char r,unsigned char g,unsigned char b);
 
-MyVector GetDirection(int x, int y)
+MyVector get_direction(int x, int y)
 {
 	MyVector direction;
+	double displacementX = - ((double) WIDTH) / ((double) HEIGHT) / sqrt(3);
+	double displacementY = - 1 / sqrt(3);
 
-	direction.x = 2 / sqrt(3) * ((float)x) / ((float)HEIGHT);
-	direction.y = 2 / sqrt(3) * ((float)x) / ((float)HEIGHT);
+	direction.x = (2 / sqrt(3) * ((double)x) / ((double)HEIGHT)) + displacementX;
+	direction.y = (2 / sqrt(3) * ((double)y) / ((double)HEIGHT)) + displacementY;
 	direction.z = -1.0f;
-	
+
 	return direction.normalize();
+}
+
+double min(double t0, double t1)
+{
+	if (t0 < t1) return t0;
+	else return t1;
+}
+
+MyVector get_shadowRay(MyVector intersect, int light_idx)
+{
+	// SHOULD ITERATE EACH LIGHTS HERE LATER
+	return MyVector(lights[light_idx].position[0] - intersect.x,
+					lights[light_idx].position[1] - intersect.y,
+					lights[light_idx].position[2] - intersect.z).normalize();
 }
 
 //MODIFY THIS FUNCTION
 void draw_scene()
 {
-	MyVector direction;
+	double MIN_T_MAX = 10000;
+	MyVector direction, shadowRay, normal, reflect;
+	double b, c, xc, yc, zc, radius, root, t0, t1, min_t;
+	int min_t_idx;
+
     //a simple test output
     for(unsigned int x=0; x<WIDTH; x++)
     {
@@ -154,9 +204,98 @@ void draw_scene()
         glBegin(GL_POINTS);
         for(unsigned int y=0; y<HEIGHT; y++)
         {
-            // DO SOMETHING HERE
-        	direction = GetDirection(x, y);
-            plot_pixel(x, y, x % 256, y % 256, (x+y) % 256);
+        	double phong_light[3] = { 0.0, 0.0, 0.0 };
+        	double min_t_so_far = MIN_T_MAX;
+        	bool min_t_with_sphere = true;
+
+        	// Step 1: Fire a ray from COP
+        	direction = get_direction(x, y);
+
+        	// Step 2: Calculate closest intersection among objects
+        	// Iterate objects not just sphere!
+        	for (int idx = 0; idx < num_spheres; idx++)
+        	{
+        		xc = spheres[idx].position[0];
+	        	yc = spheres[idx].position[1];
+	        	zc = spheres[idx].position[2];
+	        	radius = spheres[idx].radius;
+	        	b = -2.0f * (direction.x * xc + direction.y * yc + direction.z * zc);
+	        	c = pow(xc, 2.0) + pow(yc, 2.0) + pow(zc, 2.0) - pow(radius, 2.0);
+
+	        	root = b * b - 4 * c;
+
+	        	// When there is at least a solution for t
+	        	if (root >= 0)
+	        	{
+	        		t0 = (- b + sqrt(root)) / 2.0f;
+		        	t1 = (- b - sqrt(root)) / 2.0f;
+
+		        	if (t0 > 0 && t1 > 0) min_t = min(t0, t1);
+		        	else if (t0 > 0) min_t = t0;
+		        	else if (t1 > 0) min_t = t1;
+		        	else continue;
+
+		        	if (min_t < min_t_so_far) 
+		        	{
+		        		min_t_so_far = min_t;
+		        		min_t_idx = idx;
+		        	}
+		        }
+        	}
+
+        	// update variables with final result
+        	min_t = min_t_so_far;
+        	xc = spheres[min_t_idx].position[0];
+	        yc = spheres[min_t_idx].position[1];
+	       	zc = spheres[min_t_idx].position[2];
+	       	radius = spheres[min_t_idx].radius;
+
+        	// Step 3: For closest intersection
+        	if (min_t != MIN_T_MAX)
+        	{
+        		for (int light_idx = 0; light_idx < num_lights; light_idx++)
+        		{
+        			shadowRay = get_shadowRay(direction.mult(min_t), light_idx);
+
+			        if (!shadowRay.isBlocked(min_t_idx))
+			       	{
+			       		// Calculate surface normal
+			       		normal = direction.mult(min_t).add(MyVector(xc, yc, zc).neg()).mult(1 / radius);
+
+			        	// Get reflection
+			        	reflect = normal.mult(2 * shadowRay.dot(normal)).add(shadowRay.neg()).normalize();
+
+			       		//Evaluate local phong model
+			       		double ln = shadowRay.dot(normal);
+			       		if (ln < 0) ln = 0.0; // if l dot n is negative, make it 0
+			       		double diffuse[3] = { spheres[min_t_idx].color_diffuse[0] * ln,
+			       							  spheres[min_t_idx].color_diffuse[1] * ln,
+			       							  spheres[min_t_idx].color_diffuse[2] * ln };
+
+			       		double rv = reflect.dot(direction.neg());
+			       		if (rv < 0) rv = 0.0; // if r dot v is negative, make it 0
+		        		double specular[3] = { spheres[min_t_idx].color_specular[0] * pow(rv, spheres[min_t_idx].shininess),
+		        							   spheres[min_t_idx].color_specular[1] * pow(rv, spheres[min_t_idx].shininess),
+			        						   spheres[min_t_idx].color_specular[2] * pow(rv, spheres[min_t_idx].shininess) };
+
+			       		phong_light[0] += lights[light_idx].color[0] * (diffuse[0] + specular[0]);
+			       		phong_light[1] += lights[light_idx].color[1] * (diffuse[1] + specular[1]);
+			       		phong_light[2] += lights[light_idx].color[2] * (diffuse[2] + specular[2]);
+			       	}
+        		}
+        	}
+
+        	// Resulting color is a combination of phong lighting and ambient light
+        	phong_light[0] += ambient_light[0];
+        	phong_light[1] += ambient_light[1];
+        	phong_light[2] += ambient_light[2];
+
+        	for (int idx = 0; idx < 3; idx++)
+        	{
+        		if (phong_light[idx] > 1.0) phong_light[idx] = 1.0;
+        	}
+
+        	plot_pixel(x, y, phong_light[0] * 255, phong_light[1] * 255, phong_light[2] * 255);
         }
         glEnd();
         glFlush();
