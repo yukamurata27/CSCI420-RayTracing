@@ -284,7 +284,7 @@ bool intersectTriangle(int triangle_idx, MyVector normal, MyVector direction, do
 bool blocked(MyVector shadowRay, MyVector intersection, int light_idx)
 {
 	// Threshold
-	double epsilon = 0.001;
+	double epsilon = 0.000001;
 
 	MyVector light = MyVector(lights[light_idx].position[0],
 							  lights[light_idx].position[1],
@@ -340,6 +340,7 @@ bool blocked(MyVector shadowRay, MyVector intersection, int light_idx)
        		shadowRay.mult(t).magnitude() < dist_to_light &&
        		intersectTriangle(triangle_idx, n, shadowRay, t, intersection)) return true;
     }
+
     return false;
 }
 
@@ -474,8 +475,6 @@ void draw_scene()
 				       	else // Shading for a triangle
 					    {
 					    	normal = get_triangle_normal(min_t_idx);
-
-					    	// Get reflection
 					        reflect = get_reflection(shadowRay, normal);
 
 					        // kd's at each riangle vertex
@@ -491,7 +490,7 @@ void draw_scene()
 
 					        // Get diffuse component
 					        double ln = shadowRay.dot(normal);
-				       		if (ln < 0) ln = 0.0; // if l dot n is negative, make it 0
+				       		if (ln < 0) ln = 0; // if l dot n is negative, make it 0
 				       		double kd[3] = {alpha * v0_kd[0] + beta * v1_kd[0] + (1-alpha-beta) * v2_kd[0], // R
 				       						alpha * v0_kd[1] + beta * v1_kd[1] + (1-alpha-beta) * v2_kd[1], // G
 				       						alpha * v0_kd[2] + beta * v1_kd[2] + (1-alpha-beta) * v2_kd[2]};// B
@@ -555,6 +554,7 @@ void draw_scene()
         glEnd();
         glFlush();
     }
+
     printf("Done!\n"); fflush(stdout);
 }
 
