@@ -54,6 +54,20 @@ double aspect_ratio = ((double) WIDTH) / ((double)HEIGHT);
 
 unsigned char buffer[HEIGHT][WIDTH][3];
 
+struct Point2D
+{
+	double x;
+	double y;
+
+	Point2D() { x = y = 0; }
+
+	Point2D(double x, double y)
+	{
+		this->x = x;
+		this->y = y;
+	}
+};
+
 struct Vertex
 {
     double position[3];
@@ -92,6 +106,7 @@ int num_triangles = 0;
 int num_spheres = 0;
 int num_lights = 0;
 
+// Customized 3D vector
 struct MyVector
 {
 	double x;
@@ -109,59 +124,60 @@ struct MyVector
         this->z = z;
     }
 
+    // Add of two vectors
     MyVector add(MyVector vec)
     {
         return MyVector(this->x + vec.x, this->y + vec.y, this->z + vec.z);
     }
 
+    // Scale this vector
 	MyVector mult(double scale)
     {
         return MyVector(scale * this->x, scale * this->y, scale * this->z);
     }
 
+    // Negation of this vector
     MyVector neg() { return this->mult(-1.0f); }
 
+    // Subtract a vector from this vector
+    MyVector minus(MyVector vec)
+    {
+    	return this->add(vec.neg());
+    }
+
+    // Get the length of this vector
+    double magnitude(){
+    	return sqrt(this->x * this->x + this->y * this->y + this->z * this->z);
+    }
+
+    // Normalize this vector
 	MyVector normalize()
 	{
-		double magnitude = sqrt(this->x * this->x + this->y * this->y + this->z * this->z);
-		return this->mult(1.0f / magnitude);
+		return this->mult(1.0f / this->magnitude());
 	}
 
+	// Do dot product
 	double dot(MyVector v)
 	{
 		return this->x * v.x + this->y * v.y + this->z * v.z;
 	}
 
-	bool isBlocked(int sphere_idx)
+	// Do cross product
+	MyVector crossP(MyVector p)
 	{
-		double xd = this->x;
-		double yd = this->y;
-		double zd = this->z;
+		double dx = this->y * p.z - this->z * p.y;
+		double dy = - (this->x * p.z - this->z * p.x);
+		double dz = this->x * p.y - this->y * p.x;
 
-		// ITERATE ALL SPHERES LATER
-		double xc = spheres[sphere_idx].position[0];
-		double yc = spheres[sphere_idx].position[1];
-		double zc = spheres[sphere_idx].position[2];
-		double r = spheres[sphere_idx].radius;
-
-		double b = -2.0f * (xd * xc + yd * yc + zd * zc);
-		double c = pow (xc, 2.0) + pow (yc, 2.0) + pow (zc, 2.0) - pow (r, 2.0);
-		double root = pow (b, 2.0) - 4.0 * c;
-
-		if (root < 0) return false;
-
-		double t0 = (- b + sqrt(root)) / 2.0f;
-		double t1 = (- b - sqrt(root)) / 2.0f;
-
-		if (t0 > 0 || t1 > 0) return true;
-		else return false;
- 	}
+		return MyVector(dx, dy, dz);
+	}
 };
 
 void plot_pixel_display(int x,int y,unsigned char r,unsigned char g,unsigned char b);
 void plot_pixel_jpeg(int x,int y,unsigned char r,unsigned char g,unsigned char b);
 void plot_pixel(int x,int y,unsigned char r,unsigned char g,unsigned char b);
 
+// Get a direction vector
 MyVector get_direction(int x, int y)
 {
 	MyVector direction;
@@ -175,12 +191,14 @@ MyVector get_direction(int x, int y)
 	return direction.normalize();
 }
 
+// Get the minimum t value
 double min(double t0, double t1)
 {
 	if (t0 < t1) return t0;
 	else return t1;
 }
 
+// Get a shadow ray from the intersection point
 MyVector get_shadowRay(MyVector intersect, int light_idx)
 {
 	// SHOULD ITERATE EACH LIGHTS HERE LATER
@@ -189,7 +207,143 @@ MyVector get_shadowRay(MyVector intersect, int light_idx)
 					lights[light_idx].position[2] - intersect.z).normalize();
 }
 
-//MODIFY THIS FUNCTION
+// Get normal of a triangle
+MyVector get_triangle_normal(int triangle_idx)
+{
+	MyVector p0 = MyVector(triangles[triangle_idx].v[0].position[0],
+						   triangles[triangle_idx].v[0].position[1],
+						   triangles[triangle_idx].v[0].position[2]);
+	MyVector p1 = MyVector(triangles[triangle_idx].v[1].position[0],
+						   triangles[triangle_idx].v[1].position[1],
+						   triangles[triangle_idx].v[1].position[2]);
+	MyVector p2 = MyVector(triangles[triangle_idx].v[2].position[0],
+						   triangles[triangle_idx].v[2].position[1],
+						   triangles[triangle_idx].v[2].position[2]);
+
+	MyVector p0p1 = p1.minus(p0);
+	MyVector p0p2 = p2.minus(p0);
+
+	return p0p1.crossP(p0p2).normalize();	
+}
+
+// Get reflection vector
+MyVector get_reflection(MyVector l, MyVector n)
+{
+	return (n.mult(2 * l.dot(n)).minus(l)).normalize();
+}
+
+double alpha, beta;
+
+// Inside test for a triangle
+bool intersectTriangle(int triangle_idx, MyVector normal, MyVector direction, double t, MyVector origin)
+{
+	// Threshold
+	double epsilon = 0.001;
+
+	// Vertices of the triangle
+	MyVector v0 = MyVector(triangles[triangle_idx].v[0].position[0],
+						   triangles[triangle_idx].v[0].position[1],
+						   triangles[triangle_idx].v[0].position[2]);
+	MyVector v1 = MyVector(triangles[triangle_idx].v[1].position[0],
+						   triangles[triangle_idx].v[1].position[1],
+						   triangles[triangle_idx].v[1].position[2]);
+	MyVector v2 = MyVector(triangles[triangle_idx].v[2].position[0],
+						   triangles[triangle_idx].v[2].position[1],
+						   triangles[triangle_idx].v[2].position[2]);
+
+	// Intersection point
+	MyVector p = origin.add(direction.mult(t));
+	double areaAll = normal.magnitude(); 
+
+	// Inside test following
+
+    MyVector edge01 = v1.minus(v0);
+    MyVector v0p = p.minus(v0);
+    MyVector perpendicular = edge01.crossP(v0p);
+    // out side of edge01
+    if (normal.dot(perpendicular) < 0) return false;
+ 
+    MyVector edge12 = v2.minus(v1);
+    MyVector v1p = p.minus(v1);
+    perpendicular = edge12.crossP(v1p);
+    alpha = perpendicular.magnitude() / areaAll;
+    // out side of edge12
+    if (normal.dot(perpendicular) < 0) return false;
+ 
+    MyVector edge20 = v0.minus(v2);
+    MyVector v2p = p.minus(v2);
+    perpendicular = edge20.crossP(v2p);
+    beta = perpendicular.magnitude() / areaAll; 
+    // out side of edge20
+    if (normal.dot(perpendicular) < 0) return false;
+ 
+    return true;
+}
+
+// Check if a ray is blocked by an object
+bool blocked(MyVector shadowRay, MyVector intersection, int light_idx)
+{
+	// Threshold
+	double epsilon = 0.001;
+
+	MyVector light = MyVector(lights[light_idx].position[0],
+							  lights[light_idx].position[1],
+							  lights[light_idx].position[2]);
+
+	double dist_to_light = light.minus(intersection).magnitude();
+
+	// Check intersection with any spheres
+	for (int idx = 0; idx < num_spheres; idx++)
+    {
+       	double xc = spheres[idx].position[0];
+	    double yc = spheres[idx].position[1];
+    	double zc = spheres[idx].position[2];
+	  	double radius = spheres[idx].radius;
+
+        double b = 2 * (shadowRay.x * (intersection.x - xc) +
+        				shadowRay.y * (intersection.y - yc) +
+        				shadowRay.z * (intersection.z - zc));
+	    double c = pow(intersection.x - xc, 2.0) + pow(intersection.y - yc, 2.0) + pow(intersection.z - zc, 2.0) - pow(radius, 2.0);
+       	double root = b * b - 4 * c;
+
+	    // No solution for t
+	   	if (root < 0) continue;
+
+       	double t0 = (- b + sqrt(root)) / 2.0;
+		double t1 = (- b - sqrt(root)) / 2.0;
+
+		if (t0 > epsilon && shadowRay.mult(t0).magnitude() < dist_to_light) return true;
+		if (t1 > epsilon && shadowRay.mult(t1).magnitude() < dist_to_light) return true;
+    }
+
+    // Check intersection with any triangles
+    for (int triangle_idx = 0; triangle_idx < num_triangles; triangle_idx++)
+    {
+       	MyVector n = get_triangle_normal(triangle_idx);
+       	double nd = n.dot(shadowRay);
+
+       	// ray is parallel to the plane
+       	if (nd == 0) continue;
+
+        MyVector p0 = MyVector(triangles[triangle_idx].v[0].position[0],
+        					   triangles[triangle_idx].v[0].position[1],
+       						   triangles[triangle_idx].v[0].position[2]);
+        double d = n.dot(p0);
+
+       	double t = (d - n.dot(intersection)) / nd;
+
+       	// ray intersects a plane behind the scene
+       	if (t <= 0) continue;
+   		
+   		// Inside test
+       	if (t > epsilon &&
+       		shadowRay.mult(t).magnitude() < dist_to_light &&
+       		intersectTriangle(triangle_idx, n, shadowRay, t, intersection)) return true;
+    }
+    return false;
+}
+
+// Assign pixel values
 void draw_scene()
 {
 	double MIN_T_MAX = 10000;
@@ -211,15 +365,15 @@ void draw_scene()
         	// Step 1: Fire a ray from COP
         	direction = get_direction(x, y);
 
-        	// Step 2: Calculate closest intersection among objects
-        	// Iterate objects not just sphere!
+        	// Step 2: Calculate closest intersection among objects --------------------------------------------------------
+        	// Step 2-1: Check spheres
         	for (int idx = 0; idx < num_spheres; idx++)
         	{
         		xc = spheres[idx].position[0];
 	        	yc = spheres[idx].position[1];
 	        	zc = spheres[idx].position[2];
 	        	radius = spheres[idx].radius;
-	        	b = -2.0f * (direction.x * xc + direction.y * yc + direction.z * zc);
+	        	b = -2.0 * (direction.x * xc + direction.y * yc + direction.z * zc);
 	        	c = pow(xc, 2.0) + pow(yc, 2.0) + pow(zc, 2.0) - pow(radius, 2.0);
 
 	        	root = b * b - 4 * c;
@@ -227,8 +381,8 @@ void draw_scene()
 	        	// When there is at least a solution for t
 	        	if (root >= 0)
 	        	{
-	        		t0 = (- b + sqrt(root)) / 2.0f;
-		        	t1 = (- b - sqrt(root)) / 2.0f;
+	        		t0 = (- b + sqrt(root)) / 2.0;
+		        	t1 = (- b - sqrt(root)) / 2.0;
 
 		        	if (t0 > 0 && t1 > 0) min_t = min(t0, t1);
 		        	else if (t0 > 0) min_t = t0;
@@ -242,47 +396,148 @@ void draw_scene()
 		        	}
 		        }
         	}
+        	
+        	// Step 2-2: Check triangles
+        	for (int triangle_idx = 0; triangle_idx < num_triangles; triangle_idx++)
+        	{
+        		MyVector n = get_triangle_normal(triangle_idx);
+        		double nd = n.dot(direction);
+
+        		if (nd != 0) // ray is not parallel to the plane
+        		{
+        			MyVector p0 = MyVector(triangles[triangle_idx].v[0].position[0],
+        								   triangles[triangle_idx].v[0].position[1],
+        								   triangles[triangle_idx].v[0].position[2]);
+
+        			min_t = n.dot(p0) / nd;
+
+        			// ray intersects a plane including the triangle
+        			if (min_t > 0 && min_t < min_t_so_far)
+        			{
+        				if (intersectTriangle(triangle_idx, n, direction, min_t, MyVector(0, 0, 0)))
+			        	{
+			        		min_t_so_far = min_t;
+        					min_t_idx = triangle_idx;
+        					min_t_with_sphere = false;
+			        	}
+        			}
+        		}
+        	}
 
         	// update variables with final result
         	min_t = min_t_so_far;
-        	xc = spheres[min_t_idx].position[0];
-	        yc = spheres[min_t_idx].position[1];
-	       	zc = spheres[min_t_idx].position[2];
-	       	radius = spheres[min_t_idx].radius;
 
-        	// Step 3: For closest intersection
+        	// end of get min t ---------------------------------------------------------------------------------------------
+
+        	// Step 3: For the closest intersection, color the pixel
         	if (min_t != MIN_T_MAX)
         	{
         		for (int light_idx = 0; light_idx < num_lights; light_idx++)
         		{
         			shadowRay = get_shadowRay(direction.mult(min_t), light_idx);
 
-			        if (!shadowRay.isBlocked(min_t_idx))
-			       	{
-			       		// Calculate surface normal
-			       		normal = direction.mult(min_t).add(MyVector(xc, yc, zc).neg()).mult(1 / radius);
+        			// When shadow ray is not blocked, evaluate the phong model
+        			if (!blocked(shadowRay, direction.mult(min_t), light_idx))
+        			{
+        				// Shading for a sphere
+				        if (min_t_with_sphere)
+				       	{
+				       		// update variables with final result
+			        		xc = spheres[min_t_idx].position[0];
+					        yc = spheres[min_t_idx].position[1];
+					       	zc = spheres[min_t_idx].position[2];
+					       	radius = spheres[min_t_idx].radius;
 
-			        	// Get reflection
-			        	reflect = normal.mult(2 * shadowRay.dot(normal)).add(shadowRay.neg()).normalize();
+				       		// Calculate surface normal
+				       		normal = direction.mult(min_t).minus(MyVector(xc, yc, zc)).mult(1 / radius);
 
-			       		//Evaluate local phong model
-			       		double ln = shadowRay.dot(normal);
-			       		if (ln < 0) ln = 0.0; // if l dot n is negative, make it 0
-			       		double diffuse[3] = { spheres[min_t_idx].color_diffuse[0] * ln,
-			       							  spheres[min_t_idx].color_diffuse[1] * ln,
-			       							  spheres[min_t_idx].color_diffuse[2] * ln };
+				        	// Get reflection
+				        	reflect = get_reflection(shadowRay, normal);
 
-			       		double rv = reflect.dot(direction.neg());
-			       		if (rv < 0) rv = 0.0; // if r dot v is negative, make it 0
-		        		double specular[3] = { spheres[min_t_idx].color_specular[0] * pow(rv, spheres[min_t_idx].shininess),
-		        							   spheres[min_t_idx].color_specular[1] * pow(rv, spheres[min_t_idx].shininess),
-			        						   spheres[min_t_idx].color_specular[2] * pow(rv, spheres[min_t_idx].shininess) };
+				       		//Evaluate local phong model
+				       		double ln = shadowRay.dot(normal);
+				       		if (ln < 0) ln = 0.0; // if l dot n is negative, make it 0
+				       		double diffuse[3] = { spheres[min_t_idx].color_diffuse[0] * ln,
+				       							  spheres[min_t_idx].color_diffuse[1] * ln,
+				       							  spheres[min_t_idx].color_diffuse[2] * ln };
 
-			       		phong_light[0] += lights[light_idx].color[0] * (diffuse[0] + specular[0]);
-			       		phong_light[1] += lights[light_idx].color[1] * (diffuse[1] + specular[1]);
-			       		phong_light[2] += lights[light_idx].color[2] * (diffuse[2] + specular[2]);
-			       	}
+				       		double rv = reflect.dot(direction.neg());
+				       		if (rv < 0) rv = 0.0; // if r dot v is negative, make it 0
+			        		double specular[3] = { spheres[min_t_idx].color_specular[0] * pow(rv, spheres[min_t_idx].shininess),
+			        							   spheres[min_t_idx].color_specular[1] * pow(rv, spheres[min_t_idx].shininess),
+				        						   spheres[min_t_idx].color_specular[2] * pow(rv, spheres[min_t_idx].shininess) };
+
+				       		phong_light[0] += lights[light_idx].color[0] * (diffuse[0] + specular[0]);
+				       		phong_light[1] += lights[light_idx].color[1] * (diffuse[1] + specular[1]);
+				       		phong_light[2] += lights[light_idx].color[2] * (diffuse[2] + specular[2]);
+				       	}
+				       	else // Shading for a triangle
+					    {
+					    	normal = get_triangle_normal(min_t_idx);
+
+					    	// Get reflection
+					        reflect = get_reflection(shadowRay, normal);
+
+					        // kd's at each riangle vertex
+					        double v0_kd[3] = { triangles[min_t_idx].v[0].color_diffuse[0],   // R
+					        					triangles[min_t_idx].v[0].color_diffuse[1],   // G
+					        					triangles[min_t_idx].v[0].color_diffuse[2] }; // B
+					        double v1_kd[3] = { triangles[min_t_idx].v[1].color_diffuse[0],   // R
+					        					triangles[min_t_idx].v[1].color_diffuse[1],   // G
+					        					triangles[min_t_idx].v[1].color_diffuse[2] }; // B
+					        double v2_kd[3] = { triangles[min_t_idx].v[2].color_diffuse[0],   // R
+					        					triangles[min_t_idx].v[2].color_diffuse[1],   // G
+					        					triangles[min_t_idx].v[2].color_diffuse[2] }; // B
+
+					        // Get diffuse component
+					        double ln = shadowRay.dot(normal);
+				       		if (ln < 0) ln = 0.0; // if l dot n is negative, make it 0
+				       		double kd[3] = {alpha * v0_kd[0] + beta * v1_kd[0] + (1-alpha-beta) * v2_kd[0], // R
+				       						alpha * v0_kd[1] + beta * v1_kd[1] + (1-alpha-beta) * v2_kd[1], // G
+				       						alpha * v0_kd[2] + beta * v1_kd[2] + (1-alpha-beta) * v2_kd[2]};// B
+				       		double diffuse[3] = { kd[0] * ln,
+				       							  kd[1] * ln,
+				       							  kd[2] * ln };
+
+				       		// ks' at each riangle vertex
+					        double v0_ks[3] = { triangles[min_t_idx].v[0].color_specular[0],   // R
+					        					triangles[min_t_idx].v[0].color_specular[1],   // G
+					        					triangles[min_t_idx].v[0].color_specular[2] }; // B
+					        double v1_ks[3] = { triangles[min_t_idx].v[1].color_specular[0],   // R
+					        					triangles[min_t_idx].v[1].color_specular[1],   // G
+					        					triangles[min_t_idx].v[1].color_specular[2] }; // B
+					        double v2_ks[3] = { triangles[min_t_idx].v[2].color_specular[0],   // R
+					        					triangles[min_t_idx].v[2].color_specular[1],   // G
+					        					triangles[min_t_idx].v[2].color_specular[2] }; // B
+
+				       		// Get specular component
+					        double rv = reflect.dot(direction.neg());
+					        if (rv < 0) rv = 0.0; // if r dot v is negative, make it 0
+					        double ks[3] = {alpha * v0_ks[0] + beta * v1_ks[0] + (1-alpha-beta) * v2_ks[0], // R
+				       						alpha * v0_ks[1] + beta * v1_ks[1] + (1-alpha-beta) * v2_ks[1], // G
+				       						alpha * v0_ks[2] + beta * v1_ks[2] + (1-alpha-beta) * v2_ks[2]};// B
+
+				       		double shininesses[3] = { triangles[min_t_idx].v[0].shininess,
+					        						  triangles[min_t_idx].v[1].shininess,
+					        						  triangles[min_t_idx].v[2].shininess };
+				       		double interpolate_shi = alpha * shininesses[0] + beta * shininesses[1] + (1-alpha-beta) * shininesses[2];
+
+				       		double specular[3] = { ks[0] * pow(rv, interpolate_shi),
+			        							   ks[1] * pow(rv, interpolate_shi),
+				        						   ks[2] * pow(rv, interpolate_shi) };
+
+					    	phong_light[0] += lights[light_idx].color[0] * (diffuse[0] + specular[0]);
+					       	phong_light[1] += lights[light_idx].color[1] * (diffuse[1] + specular[1]);
+					       	phong_light[2] += lights[light_idx].color[2] * (diffuse[2] + specular[2]);
+					    }
+				    }
         		}
+        	}
+        	else // Set white background
+        	{
+        		phong_light[0] += 1;
+				phong_light[1] += 1;
+				phong_light[2] += 1;
         	}
 
         	// Resulting color is a combination of phong lighting and ambient light
