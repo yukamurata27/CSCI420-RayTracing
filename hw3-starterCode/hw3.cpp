@@ -207,6 +207,10 @@ MyVector get_shadowRay(MyVector intersect, int light_idx)
 					lights[light_idx].position[2] - intersect.z).normalize();
 }
 
+// TO DO
+// Need to interpolate normals at each vertices
+// Need to see if normal is CW or CCW
+
 // Get normal of a triangle
 MyVector get_triangle_normal(int triangle_idx)
 {
@@ -222,8 +226,8 @@ MyVector get_triangle_normal(int triangle_idx)
 
 	MyVector p0p1 = p1.minus(p0);
 	MyVector p0p2 = p2.minus(p0);
-
-	return p0p1.crossP(p0p2).normalize();	
+	
+	return p0p1.crossP(p0p2).normalize();
 }
 
 // Get reflection vector
@@ -351,6 +355,7 @@ void draw_scene()
 	MyVector direction, shadowRay, normal, reflect;
 	double b, c, xc, yc, zc, radius, root, t0, t1, min_t;
 	int min_t_idx;
+	double epsilon = 0.0000001;
 
     //a simple test output
     for(unsigned int x=0; x<WIDTH; x++)
@@ -404,6 +409,8 @@ void draw_scene()
         		MyVector n = get_triangle_normal(triangle_idx);
         		double nd = n.dot(direction);
 
+        		//if (nd != 0) // ray is not parallel to the plane
+        		//if (-epsilon > nd || nd > epsilon) // check if nd is begger than |epsilon|
         		if (nd != 0) // ray is not parallel to the plane
         		{
         			MyVector p0 = MyVector(triangles[triangle_idx].v[0].position[0],
@@ -474,7 +481,18 @@ void draw_scene()
 				       	}
 				       	else // Shading for a triangle
 					    {
-					    	normal = get_triangle_normal(min_t_idx);
+					    	// Use interpolated normal
+					    	MyVector normal0 = MyVector(triangles[min_t_idx].v[0].normal[0],
+					    								triangles[min_t_idx].v[0].normal[1],
+					    								triangles[min_t_idx].v[0].normal[2]);
+					    	MyVector normal1 = MyVector(triangles[min_t_idx].v[1].normal[0],
+					    								triangles[min_t_idx].v[1].normal[1],
+					    								triangles[min_t_idx].v[1].normal[2]);
+					    	MyVector normal2 = MyVector(triangles[min_t_idx].v[2].normal[0],
+					    								triangles[min_t_idx].v[2].normal[1],
+					    								triangles[min_t_idx].v[2].normal[2]);
+					    	normal = normal0.mult(alpha).add(normal1.mult(beta)).add(normal2.mult(1-alpha-beta));
+
 					        reflect = get_reflection(shadowRay, normal);
 
 					        // kd's at each riangle vertex
