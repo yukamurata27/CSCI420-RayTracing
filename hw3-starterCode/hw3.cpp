@@ -150,6 +150,10 @@ struct MyVector
     	return sqrt(this->x * this->x + this->y * this->y + this->z * this->z);
     }
 
+    double magnitude_wo_normalized(){
+    	return this->x * this->x + this->y * this->y + this->z * this->z;
+    }
+
     // Normalize this vector
 	MyVector normalize()
 	{
@@ -207,10 +211,6 @@ MyVector get_shadowRay(MyVector intersect, int light_idx)
 					lights[light_idx].position[2] - intersect.z).normalize();
 }
 
-// TO DO
-// Need to interpolate normals at each vertices
-// Need to see if normal is CW or CCW
-
 // Get normal of a triangle
 MyVector get_triangle_normal(int triangle_idx)
 {
@@ -227,7 +227,7 @@ MyVector get_triangle_normal(int triangle_idx)
 	MyVector p0p1 = p1.minus(p0);
 	MyVector p0p2 = p2.minus(p0);
 	
-	return p0p1.crossP(p0p2).normalize();
+	return p0p1.crossP(p0p2);//.normalize();
 }
 
 // Get reflection vector
@@ -239,10 +239,10 @@ MyVector get_reflection(MyVector l, MyVector n)
 double alpha, beta;
 
 // Inside test for a triangle
-bool intersectTriangle(int triangle_idx, MyVector normal, MyVector direction, double t, MyVector origin)
+bool intersectTriangle(int triangle_idx, MyVector direction, double t, MyVector origin)
 {
-	// Threshold
-	double epsilon = 0.001;
+	MyVector normal = get_triangle_normal(triangle_idx);
+	double denom = normal.dot(normal); 
 
 	// Vertices of the triangle
 	MyVector v0 = MyVector(triangles[triangle_idx].v[0].position[0],
@@ -257,7 +257,6 @@ bool intersectTriangle(int triangle_idx, MyVector normal, MyVector direction, do
 
 	// Intersection point
 	MyVector p = origin.add(direction.mult(t));
-	double areaAll = normal.magnitude(); 
 
 	// Inside test following
 
@@ -270,14 +269,56 @@ bool intersectTriangle(int triangle_idx, MyVector normal, MyVector direction, do
     MyVector edge12 = v2.minus(v1);
     MyVector v1p = p.minus(v1);
     perpendicular = edge12.crossP(v1p);
-    alpha = perpendicular.magnitude() / areaAll;
+    alpha = normal.dot(perpendicular) / denom;
     // out side of edge12
     if (normal.dot(perpendicular) < 0) return false;
  
     MyVector edge20 = v0.minus(v2);
     MyVector v2p = p.minus(v2);
     perpendicular = edge20.crossP(v2p);
-    beta = perpendicular.magnitude() / areaAll; 
+    beta = normal.dot(perpendicular) / denom;
+    // out side of edge20
+    if (normal.dot(perpendicular) < 0) return false;
+ 
+    return true;
+}
+
+// Inside test for a triangle
+bool InsideTest(int triangle_idx, MyVector direction, double t, MyVector origin)
+{
+	MyVector normal = get_triangle_normal(triangle_idx);
+
+	// Vertices of the triangle
+	MyVector v0 = MyVector(triangles[triangle_idx].v[0].position[0],
+						   triangles[triangle_idx].v[0].position[1],
+						   triangles[triangle_idx].v[0].position[2]);
+	MyVector v1 = MyVector(triangles[triangle_idx].v[1].position[0],
+						   triangles[triangle_idx].v[1].position[1],
+						   triangles[triangle_idx].v[1].position[2]);
+	MyVector v2 = MyVector(triangles[triangle_idx].v[2].position[0],
+						   triangles[triangle_idx].v[2].position[1],
+						   triangles[triangle_idx].v[2].position[2]);
+
+	// Intersection point
+	MyVector p = origin.add(direction.mult(t));
+
+	// Inside test following
+
+    MyVector edge01 = v1.minus(v0);
+    MyVector v0p = p.minus(v0);
+    MyVector perpendicular = edge01.crossP(v0p);
+    // out side of edge01
+    if (normal.dot(perpendicular) < 0) return false;
+ 
+    MyVector edge12 = v2.minus(v1);
+    MyVector v1p = p.minus(v1);
+    perpendicular = edge12.crossP(v1p);
+    // out side of edge12
+    if (normal.dot(perpendicular) < 0) return false;
+ 
+    MyVector edge20 = v0.minus(v2);
+    MyVector v2p = p.minus(v2);
+    perpendicular = edge20.crossP(v2p);
     // out side of edge20
     if (normal.dot(perpendicular) < 0) return false;
  
@@ -288,7 +329,7 @@ bool intersectTriangle(int triangle_idx, MyVector normal, MyVector direction, do
 bool blocked(MyVector shadowRay, MyVector intersection, int light_idx)
 {
 	// Threshold
-	double epsilon = 0.000001;
+	double epsilon = 0.0000001;
 
 	MyVector light = MyVector(lights[light_idx].position[0],
 							  lights[light_idx].position[1],
@@ -323,11 +364,12 @@ bool blocked(MyVector shadowRay, MyVector intersection, int light_idx)
     // Check intersection with any triangles
     for (int triangle_idx = 0; triangle_idx < num_triangles; triangle_idx++)
     {
-       	MyVector n = get_triangle_normal(triangle_idx);
+       	MyVector n = get_triangle_normal(triangle_idx).normalize();
        	double nd = n.dot(shadowRay);
 
        	// ray is parallel to the plane
-       	if (nd == 0) continue;
+       	//if (nd == 0) continue;
+       	if (-epsilon < nd && nd < epsilon) continue;
 
         MyVector p0 = MyVector(triangles[triangle_idx].v[0].position[0],
         					   triangles[triangle_idx].v[0].position[1],
@@ -337,12 +379,13 @@ bool blocked(MyVector shadowRay, MyVector intersection, int light_idx)
        	double t = (d - n.dot(intersection)) / nd;
 
        	// ray intersects a plane behind the scene
-       	if (t <= 0) continue;
+       	//if (t <= 0) continue;
+       	if (t <= epsilon) continue;
    		
    		// Inside test
        	if (t > epsilon &&
        		shadowRay.mult(t).magnitude() < dist_to_light &&
-       		intersectTriangle(triangle_idx, n, shadowRay, t, intersection)) return true;
+       		InsideTest(triangle_idx, shadowRay, t, intersection)) return true;
     }
 
     return false;
@@ -406,23 +449,24 @@ void draw_scene()
         	// Step 2-2: Check triangles
         	for (int triangle_idx = 0; triangle_idx < num_triangles; triangle_idx++)
         	{
-        		MyVector n = get_triangle_normal(triangle_idx);
+        		MyVector n = get_triangle_normal(triangle_idx).normalize();
+        		//double nd = n.dot(direction);
         		double nd = n.dot(direction);
 
         		//if (nd != 0) // ray is not parallel to the plane
-        		//if (-epsilon > nd || nd > epsilon) // check if nd is begger than |epsilon|
-        		if (nd != 0) // ray is not parallel to the plane
+        		if (nd < epsilon || epsilon < nd)
         		{
         			MyVector p0 = MyVector(triangles[triangle_idx].v[0].position[0],
         								   triangles[triangle_idx].v[0].position[1],
         								   triangles[triangle_idx].v[0].position[2]);
 
+        			//min_t = n.dot(p0) / nd;
         			min_t = n.dot(p0) / nd;
 
         			// ray intersects a plane including the triangle
         			if (min_t > 0 && min_t < min_t_so_far)
         			{
-        				if (intersectTriangle(triangle_idx, n, direction, min_t, MyVector(0, 0, 0)))
+        				if (intersectTriangle(triangle_idx, direction, min_t, MyVector(0, 0, 0)))
 			        	{
 			        		min_t_so_far = min_t;
         					min_t_idx = triangle_idx;
@@ -465,12 +509,14 @@ void draw_scene()
 				       		//Evaluate local phong model
 				       		double ln = shadowRay.dot(normal);
 				       		if (ln < 0) ln = 0.0; // if l dot n is negative, make it 0
+				       		//if (ln > 1) ln = 1.0;
 				       		double diffuse[3] = { spheres[min_t_idx].color_diffuse[0] * ln,
 				       							  spheres[min_t_idx].color_diffuse[1] * ln,
 				       							  spheres[min_t_idx].color_diffuse[2] * ln };
 
 				       		double rv = reflect.dot(direction.neg());
 				       		if (rv < 0) rv = 0.0; // if r dot v is negative, make it 0
+				       		//if (rv > 1) rv = 1.0;
 			        		double specular[3] = { spheres[min_t_idx].color_specular[0] * pow(rv, spheres[min_t_idx].shininess),
 			        							   spheres[min_t_idx].color_specular[1] * pow(rv, spheres[min_t_idx].shininess),
 				        						   spheres[min_t_idx].color_specular[2] * pow(rv, spheres[min_t_idx].shininess) };
@@ -484,18 +530,19 @@ void draw_scene()
 					    	// Use interpolated normal
 					    	MyVector normal0 = MyVector(triangles[min_t_idx].v[0].normal[0],
 					    								triangles[min_t_idx].v[0].normal[1],
-					    								triangles[min_t_idx].v[0].normal[2]);
+					    								triangles[min_t_idx].v[0].normal[2]);//.normalize();
 					    	MyVector normal1 = MyVector(triangles[min_t_idx].v[1].normal[0],
 					    								triangles[min_t_idx].v[1].normal[1],
-					    								triangles[min_t_idx].v[1].normal[2]);
+					    								triangles[min_t_idx].v[1].normal[2]);//.normalize();
 					    	MyVector normal2 = MyVector(triangles[min_t_idx].v[2].normal[0],
 					    								triangles[min_t_idx].v[2].normal[1],
-					    								triangles[min_t_idx].v[2].normal[2]);
-					    	normal = normal0.mult(alpha).add(normal1.mult(beta)).add(normal2.mult(1-alpha-beta));
+					    								triangles[min_t_idx].v[2].normal[2]);//.normalize();
+					    	// below is normal = alpha * normal0 + beta * normal1 + (1-alpha-beta) * normal2
+					    	normal = normal0.mult(alpha).add(normal1.mult(beta)).add(normal2.mult(1-alpha-beta)).normalize();
 
 					        reflect = get_reflection(shadowRay, normal);
 
-					        // kd's at each riangle vertex
+					        // kd's at each triangle vertex
 					        double v0_kd[3] = { triangles[min_t_idx].v[0].color_diffuse[0],   // R
 					        					triangles[min_t_idx].v[0].color_diffuse[1],   // G
 					        					triangles[min_t_idx].v[0].color_diffuse[2] }; // B
@@ -509,6 +556,7 @@ void draw_scene()
 					        // Get diffuse component
 					        double ln = shadowRay.dot(normal);
 				       		if (ln < 0) ln = 0; // if l dot n is negative, make it 0
+				       		if (ln > 1) ln = 1.0;
 				       		double kd[3] = {alpha * v0_kd[0] + beta * v1_kd[0] + (1-alpha-beta) * v2_kd[0], // R
 				       						alpha * v0_kd[1] + beta * v1_kd[1] + (1-alpha-beta) * v2_kd[1], // G
 				       						alpha * v0_kd[2] + beta * v1_kd[2] + (1-alpha-beta) * v2_kd[2]};// B
@@ -530,6 +578,7 @@ void draw_scene()
 				       		// Get specular component
 					        double rv = reflect.dot(direction.neg());
 					        if (rv < 0) rv = 0.0; // if r dot v is negative, make it 0
+					        if (rv > 1) rv = 1.0;
 					        double ks[3] = {alpha * v0_ks[0] + beta * v1_ks[0] + (1-alpha-beta) * v2_ks[0], // R
 				       						alpha * v0_ks[1] + beta * v1_ks[1] + (1-alpha-beta) * v2_ks[1], // G
 				       						alpha * v0_ks[2] + beta * v1_ks[2] + (1-alpha-beta) * v2_ks[2]};// B
@@ -546,6 +595,14 @@ void draw_scene()
 					    	phong_light[0] += lights[light_idx].color[0] * (diffuse[0] + specular[0]);
 					       	phong_light[1] += lights[light_idx].color[1] * (diffuse[1] + specular[1]);
 					       	phong_light[2] += lights[light_idx].color[2] * (diffuse[2] + specular[2]);
+
+				        	//phong_light[0] += lights[light_idx].color[0] * diffuse[0];
+					       	//phong_light[1] += lights[light_idx].color[1] * diffuse[1];
+					       	//phong_light[2] += lights[light_idx].color[2] * diffuse[2];
+
+					       	//phong_light[0] += lights[light_idx].color[0] * specular[0];
+					       	//phong_light[1] += lights[light_idx].color[1] * specular[1];
+					       	//phong_light[2] += lights[light_idx].color[2] * specular[2];
 					    }
 				    }
         		}
