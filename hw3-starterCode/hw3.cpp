@@ -150,7 +150,7 @@ struct MyVector
     	return sqrt(this->x * this->x + this->y * this->y + this->z * this->z);
     }
 
-    double magnitude_wo_normalized(){
+    double magnitude_wo_sqrt(){
     	return this->x * this->x + this->y * this->y + this->z * this->z;
     }
 
@@ -236,13 +236,12 @@ MyVector get_reflection(MyVector l, MyVector n)
 	return (n.mult(2 * l.dot(n)).minus(l)).normalize();
 }
 
-double alpha, beta;
-
 // Inside test for a triangle
-bool intersectTriangle(int triangle_idx, MyVector direction, double t, MyVector origin)
+bool intersectTriangle(int triangle_idx, MyVector direction, double t, MyVector origin, double &alpha, double &beta)
 {
 	MyVector normal = get_triangle_normal(triangle_idx);
-	double denom = normal.dot(normal); 
+	double areaAll = normal.dot(normal);
+	//double denom = normal.magnitude_wo_sqrt();
 
 	// Vertices of the triangle
 	MyVector v0 = MyVector(triangles[triangle_idx].v[0].position[0],
@@ -269,16 +268,19 @@ bool intersectTriangle(int triangle_idx, MyVector direction, double t, MyVector 
     MyVector edge12 = v2.minus(v1);
     MyVector v1p = p.minus(v1);
     perpendicular = edge12.crossP(v1p);
-    alpha = normal.dot(perpendicular) / denom;
+    alpha = normal.dot(perpendicular);
     // out side of edge12
-    if (normal.dot(perpendicular) < 0) return false;
+    if (alpha < 0) return false;
  
     MyVector edge20 = v0.minus(v2);
     MyVector v2p = p.minus(v2);
     perpendicular = edge20.crossP(v2p);
-    beta = normal.dot(perpendicular) / denom;
+    beta = normal.dot(perpendicular);
     // out side of edge20
-    if (normal.dot(perpendicular) < 0) return false;
+    if (beta < 0) return false;
+
+    alpha /= areaAll;
+    beta /= areaAll;
  
     return true;
 }
@@ -407,9 +409,13 @@ void draw_scene()
         glBegin(GL_POINTS);
         for(unsigned int y=0; y<HEIGHT; y++)
         {
+        	//int x = 320; int y = 260;
+
         	double phong_light[3] = { 0.0, 0.0, 0.0 };
         	double min_t_so_far = MIN_T_MAX;
         	bool min_t_with_sphere = true;
+        	double alpha, beta;
+        	double this_alpha, this_beta;
 
         	// Step 1: Fire a ray from COP
         	direction = get_direction(x, y);
@@ -466,15 +472,22 @@ void draw_scene()
         			// ray intersects a plane including the triangle
         			if (min_t > 0 && min_t < min_t_so_far)
         			{
-        				if (intersectTriangle(triangle_idx, direction, min_t, MyVector(0, 0, 0)))
+        				if (intersectTriangle(triangle_idx, direction, min_t, MyVector(0, 0, 0), alpha, beta))
 			        	{
 			        		min_t_so_far = min_t;
         					min_t_idx = triangle_idx;
         					min_t_with_sphere = false;
+        					this_alpha = alpha;
+        					this_beta = beta;
 			        	}
         			}
         		}
         	}
+
+        	alpha = this_alpha;
+        	beta = this_beta;
+        	//cout << "WHEN AFTER INTERSECTTRIANGLE === alpha: " << alpha << ", beta: " << beta << ", gamma: " << 1-alpha-beta << endl;
+        	//cout << "WHEN AFTER INTERSECTTRIANGLE === this_alpha: " << this_alpha << ", this_beta: " << this_beta << endl;
 
         	// update variables with final result
         	min_t = min_t_so_far;
@@ -592,17 +605,11 @@ void draw_scene()
 			        							   ks[1] * pow(rv, interpolate_shi),
 				        						   ks[2] * pow(rv, interpolate_shi) };
 
+				        	//cout << "DEBUG === alpha: " << alpha << ", beta: " << beta << ", gamma: " << 1-alpha-beta << endl;
+
 					    	phong_light[0] += lights[light_idx].color[0] * (diffuse[0] + specular[0]);
 					       	phong_light[1] += lights[light_idx].color[1] * (diffuse[1] + specular[1]);
 					       	phong_light[2] += lights[light_idx].color[2] * (diffuse[2] + specular[2]);
-
-				        	//phong_light[0] += lights[light_idx].color[0] * diffuse[0];
-					       	//phong_light[1] += lights[light_idx].color[1] * diffuse[1];
-					       	//phong_light[2] += lights[light_idx].color[2] * diffuse[2];
-
-					       	//phong_light[0] += lights[light_idx].color[0] * specular[0];
-					       	//phong_light[1] += lights[light_idx].color[1] * specular[1];
-					       	//phong_light[2] += lights[light_idx].color[2] * specular[2];
 					    }
 				    }
         		}
