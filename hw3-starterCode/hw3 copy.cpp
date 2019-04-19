@@ -254,6 +254,7 @@ void get_vertex_normals (int triangle_idx, MyVector &n0, MyVector &n1, MyVector 
 	n2 = get_vertex_normal(triangle_idx, 2);
 }
 
+
 Color get_vertex_diffuse (int triangle_idx, int vertex_idx)
 {
 	return Color(triangles[triangle_idx].v[vertex_idx].color_diffuse[0],   // R
@@ -349,13 +350,6 @@ MyVector get_reflectionVector(MyVector l, MyVector n)
 {
 	// Evaluate r = 2(l.n)n - l
 	return (n.mult(2 * l.dot(n)).minus(l)).normalize();
-}
-
-// Get interpolated value
-Color interpolate (Color k0, Color k1, Color k2, double alpha, double beta, double gamma)
-{
-	// alpha * k0 + beta * k1 + gamma * k2
-	return k0.mult(alpha).add(k1.mult(beta)).add(k2.mult(gamma));
 }
 
 // Inside test for a triangle
@@ -535,7 +529,7 @@ void draw_scene()
 	double epsilon = 0.0000001;
 
 	// Generate light sources for soft shadow
-	//addLights();
+	addLights();
 
     for(unsigned int x=0; x<WIDTH; x++)
     {
@@ -545,6 +539,7 @@ void draw_scene()
         {
         	// Use for summation of subrays to be used in antialiasing
         	Color phong_lights;
+        	double phong_lights2[3] = { 0.0, 0.0, 0.0 };
 
         	// xx and yy are for antialiasing
         	double num_kernel = 2;
@@ -553,6 +548,7 @@ void draw_scene()
         		for (int yy = 0; yy < num_kernel; yy++)
         		{
         			Color phong_light;
+        			double phong_light2[3] = { 0.0, 0.0, 0.0 };
 		        	double min_t_so_far = MIN_T_MAX;
 		        	bool min_t_with_sphere = true;
 		        	double alpha, beta;
@@ -646,7 +642,7 @@ void draw_scene()
 						        if (min_t_with_sphere)
 						       	{
 						       		// update variables with final result
-						       		get_sphere_info(min_t_idx, xc, yc, zc, radius);
+						       		get_sphere_info (min_t_idx, xc, yc, zc, radius);
 
 						       		// Calculate surface normal
 						       		normal = direction.mult(min_t).minus(MyVector(xc, yc, zc)).mult(1 / radius);
@@ -665,8 +661,17 @@ void draw_scene()
 						        	Color specular = get_sphere_specular(min_t_idx).mult(pow(rv, spheres[min_t_idx].shininess));
 
 									// Evaluate phong model
+									/*
 						        	Color current = get_lightColor(light_idx).mult(diffuse.add(specular));
 						        	phong_light = phong_light.add(current);
+									*/
+						        	//////////////////////////////////////////////////////////////////////////////////////////////////
+						        	// Evaluate phong model
+						       		phong_light2[0] += lights[light_idx].color[0] * (diffuse.r + specular.r);
+						       		phong_light2[1] += lights[light_idx].color[1] * (diffuse.g + specular.g);
+						       		phong_light2[2] += lights[light_idx].color[2] * (diffuse.b + specular.b);
+
+						       		//////////////////////////////////////////////////////////////////////////////////////////////////
 						       	}
 						       	else // Shading for a triangle
 							    {
@@ -687,7 +692,9 @@ void draw_scene()
 							        double ln = shadowRay.dot(normal);
 						       		if (ln < 0) ln = 0; // if l dot n is negative, make it 0
 						       		if (ln > 1) ln = 1.0;
-						       		Color kd = interpolate(v0_kd, v1_kd, v2_kd, alpha, beta, 1-alpha-beta);
+						       		Color kd = Color(alpha * v0_kd.r + beta * v1_kd.r + (1-alpha-beta) * v2_kd.r, // R
+						       						 alpha * v0_kd.g + beta * v1_kd.g + (1-alpha-beta) * v2_kd.g, // G
+						       						 alpha * v0_kd.b + beta * v1_kd.b + (1-alpha-beta) * v2_kd.b);// B
 						       		Color diffuse = kd.mult(ln);;
 
 						       		// ks' at each riangle vertex
@@ -698,7 +705,9 @@ void draw_scene()
 							        double rv = reflect.dot(direction.neg());
 							        if (rv < 0) rv = 0.0; // if r dot v is negative, make it 0
 							        if (rv > 1) rv = 1.0;
-							        Color ks = interpolate(v0_ks, v1_ks, v2_ks, alpha, beta, 1-alpha-beta);
+							        Color ks = Color(alpha * v0_ks.r + beta * v1_ks.r + (1-alpha-beta) * v2_ks.r, // R
+						       						 alpha * v0_ks.g + beta * v1_ks.g + (1-alpha-beta) * v2_ks.g, // G
+						       						 alpha * v0_ks.b + beta * v1_ks.b + (1-alpha-beta) * v2_ks.b);// B
 
 						       		double shininesses[3] = { triangles[min_t_idx].v[0].shininess,
 							        						  triangles[min_t_idx].v[1].shininess,
@@ -708,31 +717,68 @@ void draw_scene()
 						       		Color specular = ks.mult(pow(rv, interpolate_shi));
 
 						        	// Evaluate phong model
+						        	/*
 						        	Color light = get_lightColor(light_idx);
 						        	Color current = light.mult(diffuse.add(specular));
 						        	phong_light = phong_light.add(current);
+						        	*/
+						        	
+						        	//////////////////////////////////////////////////////////////////////////////////////////////////
+						        	// Evaluate phong model
+							    	phong_light2[0] += lights[light_idx].color[0] * (diffuse.r + specular.r);
+							       	phong_light2[1] += lights[light_idx].color[1] * (diffuse.g + specular.g);
+							       	phong_light2[2] += lights[light_idx].color[2] * (diffuse.b + specular.b);
+
+							       	//////////////////////////////////////////////////////////////////////////////////////////////////
 							    }
 						    }
 		        		}
 		        	}
 		        	else // Set white background
 		        	{
+		        		/*
 		        		Color white = Color(1.0, 1.0, 1.0);
 		        		phong_light = phong_light.add(white);
+		        		*/
+		        		//////////////////////////////////////////////////////////////////////////////////////////////////
+		        		phong_light2[0] += 1;
+						phong_light2[1] += 1;
+						phong_light2[2] += 1;
+						//////////////////////////////////////////////////////////////////////////////////////////////////
 		        	}
 
 		        	// Sum up phong lights for antialiasing
 		        	phong_lights = phong_lights.add(phong_light);
+		        	//////////////////////////////////////////////////////////////////////////////////////////////////
+		        	phong_lights2[0] += phong_light2[0];
+		        	phong_lights2[1] += phong_light2[1];
+		        	phong_lights2[2] += phong_light2[2];
+		        	//////////////////////////////////////////////////////////////////////////////////////////////////
         		}
         	}
 
         	// Resulting color is a combination of phong lighting and ambient light
-        	Color phong_sum = Color(phong_lights.r / pow(num_kernel, 2) + ambient_light[0],
+        	/*Color phong_sum = Color(phong_lights.r / pow(num_kernel, 2) + ambient_light[0],
         							phong_lights.g / pow(num_kernel, 2) + ambient_light[1],
         							phong_lights.b / pow(num_kernel, 2) + ambient_light[2]);
         	phong_sum.clamp();
+			*/
+        	//plot_pixel(x, y, phong_sum.r * 255, phong_sum.g * 255, phong_sum.b * 255);
 
-        	plot_pixel(x, y, phong_sum.r * 255, phong_sum.g * 255, phong_sum.b * 255);
+        	//////////////////////////////////////////////////////////////////////////////////////////////////
+        	// Resulting color is a combination of phong lighting and ambient light
+        	double phong_sum2[3] = { 0.0, 0.0, 0.0 };
+        	phong_sum2[0] = phong_lights2[0] / pow(num_kernel, 2) + ambient_light[0];
+        	phong_sum2[1] = phong_lights2[1] / pow(num_kernel, 2) + ambient_light[1];
+        	phong_sum2[2] = phong_lights2[2] / pow(num_kernel, 2) + ambient_light[2];
+
+        	for (int idx = 0; idx < 3; idx++)
+        	{
+        		if (phong_sum2[idx] > 1.0) phong_sum2[idx] = 1.0;
+        	}
+        	//cout << "check: " << phong_sum.r * 255 << " vs " << phong_sum2[0] * 255 << endl;
+        	plot_pixel(x, y, phong_sum2[0] * 255, phong_sum2[1] * 255, phong_sum2[2] * 255);
+        	//////////////////////////////////////////////////////////////////////////////////////////////////
         }
         glEnd();
         glFlush();
@@ -940,3 +986,4 @@ int main(int argc, char ** argv)
     init();
     glutMainLoop();
 }
+
