@@ -52,6 +52,12 @@ double aspect_ratio = ((double) WIDTH) / ((double)HEIGHT);
 //the field of view of the camera
 #define fov 60.0
 
+#define PI 3.14159265
+
+// variables for soft shadow and antialiasing
+#define NUM_ADDITIONAL_LIGHTS 16
+#define NUM_SUBRAYS 2
+
 unsigned char buffer[HEIGHT][WIDTH][3];
 
 struct Vertex
@@ -206,14 +212,16 @@ int num_lights = 0;
 MyVector get_directionRay(double x, double y)
 {
 	MyVector direction;
+	double degree = fov / 2 * PI / 180.0;
 
 	// Set (x, y) = (0, 0) coordinate in the center of image plane
-	double displacementX = - ((double) WIDTH) / ((double) HEIGHT) / sqrt(3);
-	double displacementY = - 1 / sqrt(3);
+	double displacementX = - ((double) WIDTH) / ((double) HEIGHT) * tan(degree);
+	double displacementY = - tan(degree);
 
 	// calculate a direction ray
-	direction.x = (2 / sqrt(3) * ((double)x) / ((double)HEIGHT)) + displacementX;
-	direction.y = (2 / sqrt(3) * ((double)y) / ((double)HEIGHT)) + displacementY;
+	double imagePlaneSize = 2 * tan(degree) / ((double)HEIGHT);
+	direction.x = imagePlaneSize * ((double)x) + displacementX;
+	direction.y = imagePlaneSize * ((double)y) + displacementY;
 	direction.z = -1.0f;
 
 	return direction.normalize();
@@ -507,19 +515,18 @@ void add_randomLights(int  light_idx, int last_idx, double num_lights)
 void addLights()
 {
 	int last_idx = num_lights;
-	double num_additionalLights = 16;
 
 	for (int light_idx = 0; light_idx < num_lights; light_idx++)
 	{
-		for (int i = 0; i < num_additionalLights; i++)
+		for (int i = 0; i < NUM_ADDITIONAL_LIGHTS; i++)
 		{
-			add_randomLights(light_idx, last_idx++, num_additionalLights);
+			add_randomLights(light_idx, last_idx++, NUM_ADDITIONAL_LIGHTS);
 		}
 
 		// Original light source
-		lights[light_idx].color[0] = lights[light_idx].color[0] / num_additionalLights;
-		lights[light_idx].color[1] = lights[light_idx].color[1] / num_additionalLights;
-		lights[light_idx].color[2] = lights[light_idx].color[2] / num_additionalLights;
+		lights[light_idx].color[0] = lights[light_idx].color[0] / NUM_ADDITIONAL_LIGHTS;
+		lights[light_idx].color[1] = lights[light_idx].color[1] / NUM_ADDITIONAL_LIGHTS;
+		lights[light_idx].color[2] = lights[light_idx].color[2] / NUM_ADDITIONAL_LIGHTS;
 	}
 
 	num_lights = last_idx;
@@ -547,10 +554,9 @@ void draw_scene()
         	Color phong_lights;
 
         	// xx and yy are for antialiasing
-        	double num_kernel = 2;
-        	for (int xx = 0; xx < num_kernel; xx++)
+        	for (int xx = 0; xx < NUM_SUBRAYS; xx++)
         	{
-        		for (int yy = 0; yy < num_kernel; yy++)
+        		for (int yy = 0; yy < NUM_SUBRAYS; yy++)
         		{
         			Color phong_light;
 		        	double min_t_so_far = MIN_T_MAX;
@@ -559,7 +565,7 @@ void draw_scene()
 		        	double this_alpha, this_beta;
 
 		        	// Step 1: Fire a ray from COP
-		        	double del = 1 / num_kernel;
+		        	double del = 1 / NUM_SUBRAYS;
 		        	direction = get_directionRay(x + xx * del, y + yy * del);
 
 		        	// Step 2: Calculate closest intersection among objects --------------------------------------------------------
@@ -727,9 +733,9 @@ void draw_scene()
         	}
 
         	// Resulting color is a combination of phong lighting and ambient light
-        	Color phong_sum = Color(phong_lights.r / pow(num_kernel, 2) + ambient_light[0],
-        							phong_lights.g / pow(num_kernel, 2) + ambient_light[1],
-        							phong_lights.b / pow(num_kernel, 2) + ambient_light[2]);
+        	Color phong_sum = Color(phong_lights.r / pow(NUM_SUBRAYS, 2) + ambient_light[0],
+        							phong_lights.g / pow(NUM_SUBRAYS, 2) + ambient_light[1],
+        							phong_lights.b / pow(NUM_SUBRAYS, 2) + ambient_light[2]);
         	phong_sum.clamp();
 
         	plot_pixel(x, y, phong_sum.r * 255, phong_sum.g * 255, phong_sum.b * 255);
