@@ -188,18 +188,60 @@ double min(double t0, double t1)
 	else return t1;
 }
 
-MyVector get_vertex (int triangle_idx, int vertex_idx)
+MyVector get_vertex_position (int triangle_idx, int vertex_idx)
 {
 	return MyVector(triangles[triangle_idx].v[vertex_idx].position[0],
 				  	triangles[triangle_idx].v[vertex_idx].position[1],
 				  	triangles[triangle_idx].v[vertex_idx].position[2]);
 }
 
-void get_vertices (int triangle_idx, MyVector &v0, MyVector &v1, MyVector &v2)
+void get_vertex_positions (int triangle_idx, MyVector &v0, MyVector &v1, MyVector &v2)
 {
-	v0 = get_vertex(triangle_idx, 0);
-	v1 = get_vertex(triangle_idx, 1);
-	v2 = get_vertex(triangle_idx, 2);
+	v0 = get_vertex_position(triangle_idx, 0);
+	v1 = get_vertex_position(triangle_idx, 1);
+	v2 = get_vertex_position(triangle_idx, 2);
+}
+
+MyVector get_vertex_normal (int triangle_idx, int vertex_idx)
+{
+	return MyVector(triangles[triangle_idx].v[vertex_idx].normal[0],
+				  	triangles[triangle_idx].v[vertex_idx].normal[1],
+				  	triangles[triangle_idx].v[vertex_idx].normal[2]);
+}
+
+void get_vertex_normals (int triangle_idx, MyVector &n0, MyVector &n1, MyVector &n2)
+{
+	n0 = get_vertex_normal(triangle_idx, 0);
+	n1 = get_vertex_normal(triangle_idx, 1);
+	n2 = get_vertex_normal(triangle_idx, 2);
+}
+
+MyVector get_vertex_diffuse (int triangle_idx, int vertex_idx)
+{
+	return MyVector(triangles[triangle_idx].v[vertex_idx].color_diffuse[0],   // R
+					triangles[triangle_idx].v[vertex_idx].color_diffuse[1],   // G
+					triangles[triangle_idx].v[vertex_idx].color_diffuse[2]);  // B
+}
+
+void get_vertex_diffuses (int triangle_idx, MyVector &kd0, MyVector &kd1, MyVector &kd2)
+{
+	kd0 = get_vertex_diffuse(triangle_idx, 0);
+	kd1 = get_vertex_diffuse(triangle_idx, 1);
+	kd2 = get_vertex_diffuse(triangle_idx, 2);
+}
+
+MyVector get_vertex_specular (int triangle_idx, int vertex_idx)
+{
+	return MyVector(triangles[triangle_idx].v[vertex_idx].color_specular[0],   // R
+					triangles[triangle_idx].v[vertex_idx].color_specular[1],   // G
+					triangles[triangle_idx].v[vertex_idx].color_specular[2]);  // B
+}
+
+void get_vertex_speculars (int triangle_idx, MyVector &ks0, MyVector &ks1, MyVector &ks2)
+{
+	ks0 = get_vertex_specular(triangle_idx, 0);
+	ks1 = get_vertex_specular(triangle_idx, 1);
+	ks2 = get_vertex_specular(triangle_idx, 2);
 }
 
 MyVector get_lightPosition (int light_idx)
@@ -228,7 +270,7 @@ MyVector get_triangle_normal(int triangle_idx)
 {
 	// Three verteces of a triangle
 	MyVector p0, p1, p2;
-	get_vertices(triangle_idx, p0, p1, p2);
+	get_vertex_positions(triangle_idx, p0, p1, p2);
 
 	MyVector p0p1 = p1.minus(p0);
 	MyVector p0p2 = p2.minus(p0);
@@ -251,7 +293,7 @@ bool intersectTriangle(int triangle_idx, MyVector direction, double t, MyVector 
 
 	// Vertices of the triangle
 	MyVector v0, v1, v2;
-	get_vertices(triangle_idx, v0, v1, v2);
+	get_vertex_positions(triangle_idx, v0, v1, v2);
 
 	// Intersection point
 	MyVector p = origin.add(direction.mult(t));
@@ -355,7 +397,7 @@ bool blocked(MyVector shadowRay, MyVector intersection, int light_idx)
        	if (-epsilon < nd && nd < epsilon) continue;
 
        	// Arbitrary point on the triangle in order to calculate d
-        MyVector p0 = get_vertex(triangle_idx, 0);
+        MyVector p0 = get_vertex_position(triangle_idx, 0);
         double d = n.dot(p0);
 
        	double t = (d - n.dot(intersection)) / nd;
@@ -432,9 +474,10 @@ void draw_scene()
         	double phong_lights[3] = { 0.0, 0.0, 0.0 };
 
         	// xx and yy are for antialiasing
-        	for (int xx = 0; xx < 3; xx++)
+        	double num_kernel = 2;
+        	for (int xx = 0; xx < num_kernel; xx++)
         	{
-        		for (int yy = 0; yy < 3; yy++)
+        		for (int yy = 0; yy < num_kernel; yy++)
         		{
         			double phong_light[3] = { 0.0, 0.0, 0.0 };
 		        	double min_t_so_far = MIN_T_MAX;
@@ -443,7 +486,7 @@ void draw_scene()
 		        	double this_alpha, this_beta;
 
 		        	// Step 1: Fire a ray from COP
-		        	double del = 0.3333;
+		        	double del = 1 / num_kernel;
 		        	direction = get_directionRay(x + xx * del, y + yy * del);
 
 		        	// Step 2: Calculate closest intersection among objects --------------------------------------------------------
@@ -486,7 +529,7 @@ void draw_scene()
 
 		        		if (nd < epsilon || epsilon < nd)
 		        		{
-		        			MyVector p0 = get_vertex(triangle_idx, 0);
+		        			MyVector p0 = get_vertex_position(triangle_idx, 0);
 
 		        			min_t = n.dot(p0) / nd;
 
@@ -562,60 +605,40 @@ void draw_scene()
 						       	else // Shading for a triangle
 							    {
 							    	// Use interpolated normal
-							    	MyVector normal0 = MyVector(triangles[min_t_idx].v[0].normal[0],
-							    								triangles[min_t_idx].v[0].normal[1],
-							    								triangles[min_t_idx].v[0].normal[2]);
-							    	MyVector normal1 = MyVector(triangles[min_t_idx].v[1].normal[0],
-							    								triangles[min_t_idx].v[1].normal[1],
-							    								triangles[min_t_idx].v[1].normal[2]);
-							    	MyVector normal2 = MyVector(triangles[min_t_idx].v[2].normal[0],
-							    								triangles[min_t_idx].v[2].normal[1],
-							    								triangles[min_t_idx].v[2].normal[2]);
+							    	MyVector normal0, normal1, normal2;
+							    	get_vertex_normals(min_t_idx, normal0, normal1, normal2);
+
 							    	// below means normal = alpha * normal0 + beta * normal1 + (1-alpha-beta) * normal2
 							    	normal = normal0.mult(alpha).add(normal1.mult(beta)).add(normal2.mult(1-alpha-beta)).normalize();
 
 							        reflect = get_reflectionVector(shadowRay, normal);
 
 							        // kd's at each triangle vertex
-							        double v0_kd[3] = { triangles[min_t_idx].v[0].color_diffuse[0],   // R
-							        					triangles[min_t_idx].v[0].color_diffuse[1],   // G
-							        					triangles[min_t_idx].v[0].color_diffuse[2] }; // B
-							        double v1_kd[3] = { triangles[min_t_idx].v[1].color_diffuse[0],   // R
-							        					triangles[min_t_idx].v[1].color_diffuse[1],   // G
-							        					triangles[min_t_idx].v[1].color_diffuse[2] }; // B
-							        double v2_kd[3] = { triangles[min_t_idx].v[2].color_diffuse[0],   // R
-							        					triangles[min_t_idx].v[2].color_diffuse[1],   // G
-							        					triangles[min_t_idx].v[2].color_diffuse[2] }; // B
+							        MyVector v0_kd, v1_kd, v2_kd;
+							        get_vertex_diffuses(min_t_idx, v0_kd, v1_kd, v2_kd);
 
 							        // Get diffuse component
 							        double ln = shadowRay.dot(normal);
 						       		if (ln < 0) ln = 0; // if l dot n is negative, make it 0
 						       		if (ln > 1) ln = 1.0;
-						       		double kd[3] = {alpha * v0_kd[0] + beta * v1_kd[0] + (1-alpha-beta) * v2_kd[0], // R
-						       						alpha * v0_kd[1] + beta * v1_kd[1] + (1-alpha-beta) * v2_kd[1], // G
-						       						alpha * v0_kd[2] + beta * v1_kd[2] + (1-alpha-beta) * v2_kd[2]};// B
+						       		double kd[3] = {alpha * v0_kd.x + beta * v1_kd.x + (1-alpha-beta) * v2_kd.x, // R
+						       						alpha * v0_kd.y + beta * v1_kd.y + (1-alpha-beta) * v2_kd.y, // G
+						       						alpha * v0_kd.z + beta * v1_kd.z + (1-alpha-beta) * v2_kd.z};// B
 						       		double diffuse[3] = { kd[0] * ln,
 						       							  kd[1] * ln,
 						       							  kd[2] * ln };
 
 						       		// ks' at each riangle vertex
-							        double v0_ks[3] = { triangles[min_t_idx].v[0].color_specular[0],   // R
-							        					triangles[min_t_idx].v[0].color_specular[1],   // G
-							        					triangles[min_t_idx].v[0].color_specular[2] }; // B
-							        double v1_ks[3] = { triangles[min_t_idx].v[1].color_specular[0],   // R
-							        					triangles[min_t_idx].v[1].color_specular[1],   // G
-							        					triangles[min_t_idx].v[1].color_specular[2] }; // B
-							        double v2_ks[3] = { triangles[min_t_idx].v[2].color_specular[0],   // R
-							        					triangles[min_t_idx].v[2].color_specular[1],   // G
-							        					triangles[min_t_idx].v[2].color_specular[2] }; // B
+						       		MyVector v0_ks, v1_ks, v2_ks;
+						       		get_vertex_speculars(min_t_idx, v0_ks, v1_ks, v2_ks);
 
 						       		// Get specular component
 							        double rv = reflect.dot(direction.neg());
 							        if (rv < 0) rv = 0.0; // if r dot v is negative, make it 0
 							        if (rv > 1) rv = 1.0;
-							        double ks[3] = {alpha * v0_ks[0] + beta * v1_ks[0] + (1-alpha-beta) * v2_ks[0], // R
-						       						alpha * v0_ks[1] + beta * v1_ks[1] + (1-alpha-beta) * v2_ks[1], // G
-						       						alpha * v0_ks[2] + beta * v1_ks[2] + (1-alpha-beta) * v2_ks[2]};// B
+							        double ks[3] = {alpha * v0_ks.x + beta * v1_ks.x + (1-alpha-beta) * v2_ks.x, // R
+						       						alpha * v0_ks.y + beta * v1_ks.y + (1-alpha-beta) * v2_ks.y, // G
+						       						alpha * v0_ks.z + beta * v1_ks.z + (1-alpha-beta) * v2_ks.z};// B
 
 						       		double shininesses[3] = { triangles[min_t_idx].v[0].shininess,
 							        						  triangles[min_t_idx].v[1].shininess,
@@ -650,9 +673,9 @@ void draw_scene()
 
         	// Resulting color is a combination of phong lighting and ambient light
         	double phong_sum[3] = { 0.0, 0.0, 0.0 };
-        	phong_sum[0] = phong_lights[0] / 9 + ambient_light[0];
-        	phong_sum[1] = phong_lights[1] / 9 + ambient_light[1];
-        	phong_sum[2] = phong_lights[2] / 9 + ambient_light[2];
+        	phong_sum[0] = phong_lights[0] / pow(num_kernel, 2) + ambient_light[0];
+        	phong_sum[1] = phong_lights[1] / pow(num_kernel, 2) + ambient_light[1];
+        	phong_sum[2] = phong_lights[2] / pow(num_kernel, 2) + ambient_light[2];
 
         	for (int idx = 0; idx < 3; idx++)
         	{
