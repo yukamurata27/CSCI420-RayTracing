@@ -83,6 +83,44 @@ struct Light
     double color[3];
 };
 
+struct Color
+{
+	double r;
+	double g;
+	double b;
+
+	Color () { r = g = b = 0; }
+
+	Color (double r, double g, double b)
+	{
+		this->r = r;
+		this->g = g;
+		this->b = b;
+	}
+
+	Color add (Color color)
+	{
+		return Color(this->r + color.r, this->g + color.g, this->b + color.b);
+	}
+
+	Color mult (double scale)
+	{
+		return Color(this->r * scale, this->g * scale, this->b * scale);
+	}
+
+	Color mult (Color color)
+	{
+		return Color(this->r * color.r, this->g * color.g, this->b * color.b);
+	}
+
+	void clamp()
+	{
+		if (this->r > 1.0) this->r = 1.0;
+		if (this->g > 1.0) this->g = 1.0;
+		if (this->b > 1.0) this->b = 1.0;
+	}
+};
+
 // Customized 3D vector
 struct MyVector
 {
@@ -91,7 +129,7 @@ struct MyVector
 	double z;
 
 	// default constructor
-    MyVector() { x = y = z = 0.0f; }
+    MyVector() { x = y = z = 0.0; }
 
 	// customized constructor
     MyVector(double x, double y, double z)
@@ -216,32 +254,61 @@ void get_vertex_normals (int triangle_idx, MyVector &n0, MyVector &n1, MyVector 
 	n2 = get_vertex_normal(triangle_idx, 2);
 }
 
-MyVector get_vertex_diffuse (int triangle_idx, int vertex_idx)
+
+Color get_vertex_diffuse (int triangle_idx, int vertex_idx)
 {
-	return MyVector(triangles[triangle_idx].v[vertex_idx].color_diffuse[0],   // R
-					triangles[triangle_idx].v[vertex_idx].color_diffuse[1],   // G
-					triangles[triangle_idx].v[vertex_idx].color_diffuse[2]);  // B
+	return Color(triangles[triangle_idx].v[vertex_idx].color_diffuse[0],   // R
+				 triangles[triangle_idx].v[vertex_idx].color_diffuse[1],   // G
+				 triangles[triangle_idx].v[vertex_idx].color_diffuse[2]);  // B
 }
 
-void get_vertex_diffuses (int triangle_idx, MyVector &kd0, MyVector &kd1, MyVector &kd2)
+void get_vertex_diffuses (int triangle_idx, Color &kd0, Color &kd1, Color &kd2)
 {
 	kd0 = get_vertex_diffuse(triangle_idx, 0);
 	kd1 = get_vertex_diffuse(triangle_idx, 1);
 	kd2 = get_vertex_diffuse(triangle_idx, 2);
 }
 
-MyVector get_vertex_specular (int triangle_idx, int vertex_idx)
+Color get_vertex_specular (int triangle_idx, int vertex_idx)
 {
-	return MyVector(triangles[triangle_idx].v[vertex_idx].color_specular[0],   // R
-					triangles[triangle_idx].v[vertex_idx].color_specular[1],   // G
-					triangles[triangle_idx].v[vertex_idx].color_specular[2]);  // B
+	return Color(triangles[triangle_idx].v[vertex_idx].color_specular[0],   // R
+				 triangles[triangle_idx].v[vertex_idx].color_specular[1],   // G
+				 triangles[triangle_idx].v[vertex_idx].color_specular[2]);  // B
 }
 
-void get_vertex_speculars (int triangle_idx, MyVector &ks0, MyVector &ks1, MyVector &ks2)
+void get_vertex_speculars (int triangle_idx, Color &ks0, Color &ks1, Color &ks2)
 {
 	ks0 = get_vertex_specular(triangle_idx, 0);
 	ks1 = get_vertex_specular(triangle_idx, 1);
 	ks2 = get_vertex_specular(triangle_idx, 2);
+}
+
+Color get_sphere_diffuse (int sphere_idx)
+{
+	return Color(spheres[sphere_idx].color_diffuse[0],   // R
+				 spheres[sphere_idx].color_diffuse[1],   // G
+				 spheres[sphere_idx].color_diffuse[2]);  // B
+}
+
+void get_sphere_diffuses (int sphere_idx, Color &kd0, Color &kd1, Color &kd2)
+{
+	kd0 = get_sphere_diffuse(sphere_idx);
+	kd1 = get_sphere_diffuse(sphere_idx);
+	kd2 = get_sphere_diffuse(sphere_idx);
+}
+
+Color get_sphere_specular (int sphere_idx)
+{
+	return Color(spheres[sphere_idx].color_specular[0],   // R
+				 spheres[sphere_idx].color_specular[1],   // G
+				 spheres[sphere_idx].color_specular[2]);  // B
+}
+
+void get_sphere_speculars (int sphere_idx, Color &ks0, Color &ks1, Color &ks2)
+{
+	ks0 = get_sphere_specular(sphere_idx);
+	ks1 = get_sphere_specular(sphere_idx);
+	ks2 = get_sphere_specular(sphere_idx);
 }
 
 MyVector get_lightPosition (int light_idx)
@@ -251,11 +318,11 @@ MyVector get_lightPosition (int light_idx)
 					lights[light_idx].position[2]);
 }
 
-MyVector get_lightColor (int light_idx)
+Color get_lightColor (int light_idx)
 {
-	return MyVector(lights[light_idx].color[0],
-					lights[light_idx].color[1],
-					lights[light_idx].color[2]);
+	return Color(lights[light_idx].color[0],
+				 lights[light_idx].color[1],
+				 lights[light_idx].color[2]);
 }
 
 // Get a shadow ray from the intersection point
@@ -471,6 +538,7 @@ void draw_scene()
         for(unsigned int y=0; y<HEIGHT; y++)
         {
         	// Use for summation of subrays to be used in antialiasing
+        	//Color phong_lights = Color();
         	double phong_lights[3] = { 0.0, 0.0, 0.0 };
 
         	// xx and yy are for antialiasing
@@ -479,6 +547,7 @@ void draw_scene()
         	{
         		for (int yy = 0; yy < num_kernel; yy++)
         		{
+        			//Color phong_light = Color();
         			double phong_light[3] = { 0.0, 0.0, 0.0 };
 		        	double min_t_so_far = MIN_T_MAX;
 		        	bool min_t_with_sphere = true;
@@ -587,20 +656,24 @@ void draw_scene()
 						       		//Evaluate local phong model
 						       		double ln = shadowRay.dot(normal);
 						       		if (ln < 0) ln = 0.0; // if l dot n is negative, make it 0
-						       		double diffuse[3] = { spheres[min_t_idx].color_diffuse[0] * ln,
-						       							  spheres[min_t_idx].color_diffuse[1] * ln,
-						       							  spheres[min_t_idx].color_diffuse[2] * ln };
 
-						       		double rv = reflect.dot(direction.neg());
-						       		if (rv < 0) rv = 0.0; // if r dot v is negative, make it 0
-					        		double specular[3] = { spheres[min_t_idx].color_specular[0] * pow(rv, spheres[min_t_idx].shininess),
-					        							   spheres[min_t_idx].color_specular[1] * pow(rv, spheres[min_t_idx].shininess),
-						        						   spheres[min_t_idx].color_specular[2] * pow(rv, spheres[min_t_idx].shininess) };
+						        	Color diffuse = get_sphere_diffuse(min_t_idx).mult(ln);
+
+						        	double rv = reflect.dot(direction.neg());
+						        	if (rv < 0) rv = 0.0; // if r dot v is negative, make it 0
+						        	Color specular = get_sphere_specular(min_t_idx).mult(pow(rv, spheres[min_t_idx].shininess));
+
+									/*
+						        	// Evaluate phong model
+						        	Color current = get_lightColor(light_idx).mult(diffuse.add(specular));
+						        	cout << "current color: " << current.r << ", " << current.g << ", " << current.b << endl;
+						        	phong_light.add(current);
+						        	*/
 
 						        	// Evaluate phong model
-						       		phong_light[0] += lights[light_idx].color[0] * (diffuse[0] + specular[0]);
-						       		phong_light[1] += lights[light_idx].color[1] * (diffuse[1] + specular[1]);
-						       		phong_light[2] += lights[light_idx].color[2] * (diffuse[2] + specular[2]);
+						       		phong_light[0] += lights[light_idx].color[0] * (diffuse.r + specular.r);
+						       		phong_light[1] += lights[light_idx].color[1] * (diffuse.g + specular.g);
+						       		phong_light[2] += lights[light_idx].color[2] * (diffuse.b + specular.b);
 						       	}
 						       	else // Shading for a triangle
 							    {
@@ -613,64 +686,86 @@ void draw_scene()
 
 							        reflect = get_reflectionVector(shadowRay, normal);
 
-							        // kd's at each triangle vertex
-							        MyVector v0_kd, v1_kd, v2_kd;
+						        	// kd's at each triangle vertex
+							        Color v0_kd, v1_kd, v2_kd;
 							        get_vertex_diffuses(min_t_idx, v0_kd, v1_kd, v2_kd);
 
 							        // Get diffuse component
 							        double ln = shadowRay.dot(normal);
 						       		if (ln < 0) ln = 0; // if l dot n is negative, make it 0
 						       		if (ln > 1) ln = 1.0;
-						       		double kd[3] = {alpha * v0_kd.x + beta * v1_kd.x + (1-alpha-beta) * v2_kd.x, // R
-						       						alpha * v0_kd.y + beta * v1_kd.y + (1-alpha-beta) * v2_kd.y, // G
-						       						alpha * v0_kd.z + beta * v1_kd.z + (1-alpha-beta) * v2_kd.z};// B
-						       		double diffuse[3] = { kd[0] * ln,
-						       							  kd[1] * ln,
-						       							  kd[2] * ln };
+						       		Color kd = Color(alpha * v0_kd.r + beta * v1_kd.r + (1-alpha-beta) * v2_kd.r, // R
+						       						 alpha * v0_kd.g + beta * v1_kd.g + (1-alpha-beta) * v2_kd.g, // G
+						       						 alpha * v0_kd.b + beta * v1_kd.b + (1-alpha-beta) * v2_kd.b);// B
+						       		Color diffuse = kd.mult(ln);;
 
 						       		// ks' at each riangle vertex
-						       		MyVector v0_ks, v1_ks, v2_ks;
+						       		Color v0_ks, v1_ks, v2_ks;
 						       		get_vertex_speculars(min_t_idx, v0_ks, v1_ks, v2_ks);
 
 						       		// Get specular component
 							        double rv = reflect.dot(direction.neg());
 							        if (rv < 0) rv = 0.0; // if r dot v is negative, make it 0
 							        if (rv > 1) rv = 1.0;
-							        double ks[3] = {alpha * v0_ks.x + beta * v1_ks.x + (1-alpha-beta) * v2_ks.x, // R
-						       						alpha * v0_ks.y + beta * v1_ks.y + (1-alpha-beta) * v2_ks.y, // G
-						       						alpha * v0_ks.z + beta * v1_ks.z + (1-alpha-beta) * v2_ks.z};// B
+							        Color ks = Color(alpha * v0_ks.r + beta * v1_ks.r + (1-alpha-beta) * v2_ks.r, // R
+						       						 alpha * v0_ks.g + beta * v1_ks.g + (1-alpha-beta) * v2_ks.g, // G
+						       						 alpha * v0_ks.b + beta * v1_ks.b + (1-alpha-beta) * v2_ks.b);// B
 
 						       		double shininesses[3] = { triangles[min_t_idx].v[0].shininess,
 							        						  triangles[min_t_idx].v[1].shininess,
 							        						  triangles[min_t_idx].v[2].shininess };
 						       		double interpolate_shi = alpha * shininesses[0] + beta * shininesses[1] + (1-alpha-beta) * shininesses[2];
 
-						       		double specular[3] = { ks[0] * pow(rv, interpolate_shi),
-					        							   ks[1] * pow(rv, interpolate_shi),
-						        						   ks[2] * pow(rv, interpolate_shi) };
+						       		Color specular = ks.mult(pow(rv, interpolate_shi));
 
 						        	// Evaluate phong model
-							    	phong_light[0] += lights[light_idx].color[0] * (diffuse[0] + specular[0]);
-							       	phong_light[1] += lights[light_idx].color[1] * (diffuse[1] + specular[1]);
-							       	phong_light[2] += lights[light_idx].color[2] * (diffuse[2] + specular[2]);
+						        	Color light = get_lightColor(light_idx);
+						        	Color current = light.mult(diffuse.add(specular));
+						        	
+						        	/*
+						        	// Evaluate phong model
+						        	Color light = get_lightColor(light_idx);
+						        	Color current = light.mult(diffuse.add(specular));
+						        	//Color current = new Color(lights[light_idx].color[0] * (diffuse.r + specular.r),
+						        	//						  lights[light_idx].color[1] * (diffuse.g + specular.g),
+						        	//						  lights[light_idx].color[2] * (diffuse.b + specular.b));
+						        	phong_light.add(current);
+						        	*/
+						        	
+						        	// Evaluate phong model
+							    	phong_light[0] += lights[light_idx].color[0] * (diffuse.r + specular.r);
+							       	phong_light[1] += lights[light_idx].color[1] * (diffuse.g + specular.g);
+							       	phong_light[2] += lights[light_idx].color[2] * (diffuse.b + specular.b);
 							    }
 						    }
 		        		}
 		        	}
 		        	else // Set white background
 		        	{
+		        		//Color white = Color(1.0, 1.0, 1.0);
+		        		//phong_light.add(white);
 		        		phong_light[0] += 1;
 						phong_light[1] += 1;
 						phong_light[2] += 1;
 		        	}
 
 		        	// Sum up phong lights for antialiasing
+		        	//phong_lights.add(phong_light);
 		        	phong_lights[0] += phong_light[0];
 		        	phong_lights[1] += phong_light[1];
 		        	phong_lights[2] += phong_light[2];
         		}
         	}
 
+        	/*
+        	// Resulting color is a combination of phong lighting and ambient light
+        	Color phong_sum = Color(phong_lights.r / pow(num_kernel, 2) + ambient_light[0],
+        							phong_lights.g / pow(num_kernel, 2) + ambient_light[1],
+        							phong_lights.b / pow(num_kernel, 2) + ambient_light[2]);
+        	phong_sum.clamp();
+
+        	plot_pixel(x, y, phong_sum.r * 255, phong_sum.g * 255, phong_sum.b * 255);
+        	*/
         	// Resulting color is a combination of phong lighting and ambient light
         	double phong_sum[3] = { 0.0, 0.0, 0.0 };
         	phong_sum[0] = phong_lights[0] / pow(num_kernel, 2) + ambient_light[0];
