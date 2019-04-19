@@ -642,10 +642,7 @@ void draw_scene()
 						        if (min_t_with_sphere)
 						       	{
 						       		// update variables with final result
-					        		xc = spheres[min_t_idx].position[0];
-							        yc = spheres[min_t_idx].position[1];
-							       	zc = spheres[min_t_idx].position[2];
-							       	radius = spheres[min_t_idx].radius;
+						       		get_sphere_info (min_t_idx, xc, yc, zc, radius);
 
 						       		// Calculate surface normal
 						       		normal = direction.mult(min_t).minus(MyVector(xc, yc, zc)).mult(1 / radius);
