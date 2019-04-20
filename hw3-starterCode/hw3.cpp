@@ -55,8 +55,8 @@ double aspect_ratio = ((double) WIDTH) / ((double)HEIGHT);
 #define PI 3.14159265
 
 // variables for soft shadow and antialiasing
-#define NUM_ADDITIONAL_LIGHTS 16
-#define NUM_SUBRAYS 2
+#define NUM_ADDITIONAL_LIGHTS 16.0
+#define NUM_SUBRAYS 2.0
 
 unsigned char buffer[HEIGHT][WIDTH][3];
 
@@ -546,7 +546,7 @@ void draw_scene()
 	double epsilon = 1e-8;
 
 	// Generate light sources for soft shadow
-	//addLights();
+	addLights();
 
     for(unsigned int x=0; x<WIDTH; x++)
     {
