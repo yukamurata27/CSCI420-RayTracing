@@ -437,7 +437,7 @@ void get_sphere_info (int sphere_index, double &xc, double &yc, double &zc, doub
 bool blocked(MyVector shadowRay, MyVector intersection, int light_idx)
 {
 	// Threshold
-	double epsilon = 0.0000001;
+	double epsilon = 1e-8;
 
 	// Light position
 	MyVector light = get_lightPosition(light_idx);
@@ -498,7 +498,11 @@ bool blocked(MyVector shadowRay, MyVector intersection, int light_idx)
 void add_randomLights(int  light_idx, int last_idx, double num_lights)
 {
 	double delta = 0.05;
-	int random = rand() % 5 + 1; // get random number between 1 - 5
+	//int random = rand() % 5 + 1; // get random number between 1 - 5
+
+	static int randomNumbers[] = { -4, -3, -2, -1, 1, 2, 3, 4} ;
+	int index = rand() % (sizeof randomNumbers / sizeof *randomNumbers);
+	int random = randomNumbers[index];
 
 	lights[last_idx].position[0] = lights[light_idx].position[0] + random * delta;
 	lights[last_idx].position[1] = lights[light_idx].position[1] + random * delta;
@@ -539,7 +543,7 @@ void draw_scene()
 	MyVector direction, shadowRay, normal, reflect;
 	double b, c, xc, yc, zc, radius, root, t0, t1, min_t;
 	int min_t_idx;
-	double epsilon = 0.0000001;
+	double epsilon = 1e-8;
 
 	// Generate light sources for soft shadow
 	//addLights();
