@@ -211,7 +211,7 @@ MyVector get_directionRay(double x, double y)
 	double displacementX = - ((double) WIDTH) / ((double) HEIGHT) / sqrt(3);
 	double displacementY = - 1 / sqrt(3);
 
-	// calculate a direction ray
+	// calculate a direction ray with fov = 60
 	direction.x = (2 / sqrt(3) * ((double)x) / ((double)HEIGHT)) + displacementX;
 	direction.y = (2 / sqrt(3) * ((double)y) / ((double)HEIGHT)) + displacementY;
 	direction.z = -1.0f;
@@ -487,10 +487,15 @@ bool blocked(MyVector shadowRay, MyVector intersection, int light_idx)
     return false;
 }
 
+// Get random position of additional lights
 void add_randomLights(int  light_idx, int last_idx, double num_lights)
 {
-	double delta = 0.05;
-	int random = rand() % 5 + 1; // get random number between 1 - 5
+	// Change this value to make soft shadow look good based on each scene
+	double delta = 0.04;
+
+	static int randomNumbers[] = { -3, -2, -1, 1, 2, 3 };
+	int index = rand() % (sizeof randomNumbers / sizeof *randomNumbers);
+	int random = randomNumbers[index];
 
 	lights[last_idx].position[0] = lights[light_idx].position[0] + random * delta;
 	lights[last_idx].position[1] = lights[light_idx].position[1] + random * delta;
@@ -507,7 +512,8 @@ void add_randomLights(int  light_idx, int last_idx, double num_lights)
 void addLights()
 {
 	int last_idx = num_lights;
-	double num_additionalLights = 16;
+	// Change this value to make soft shadow look good based on each scene
+	double num_additionalLights = 4;
 
 	for (int light_idx = 0; light_idx < num_lights; light_idx++)
 	{
@@ -535,7 +541,7 @@ void draw_scene()
 	double epsilon = 0.0000001;
 
 	// Generate light sources for soft shadow
-	//addLights();
+	addLights();
 
     for(unsigned int x=0; x<WIDTH; x++)
     {
