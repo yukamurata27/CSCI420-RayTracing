@@ -536,216 +536,257 @@ void addLights()
 	num_lights = last_idx;
 }
 
+void check_sphere_intersection(MyVector direction, double &min_t_so_far, int &min_t_idx)
+{
+	double xc, yc, zc, radius, root, b, c;
+	double t0, t1, min_t;
+
+	for (int idx = 0; idx < num_spheres; idx++)
+	{
+		//  Sphere center position and radius
+		get_sphere_info(idx, xc, yc, zc, radius);
+
+		b = -2.0 * (direction.x * xc + direction.y * yc + direction.z * zc);
+		c = pow(xc, 2.0) + pow(yc, 2.0) + pow(zc, 2.0) - pow(radius, 2.0);
+
+		root = b * b - 4 * c;
+
+		// When there is at least a solution for t
+		if (root >= 0)
+		{
+			t0 = (- b + sqrt(root)) / 2.0;
+			t1 = (- b - sqrt(root)) / 2.0;
+
+			if (t0 > 0 && t1 > 0) min_t = min(t0, t1);
+			else if (t0 > 0) min_t = t0;
+			else if (t1 > 0) min_t = t1;
+			else continue;
+
+			if (min_t < min_t_so_far) 
+			{
+				// Save minimum t value and the sphere index at this time
+				min_t_so_far = min_t;
+				min_t_idx = idx;
+			}
+		}
+	}
+}
+
+void check_triangle_intersection(MyVector direction, double &min_t_so_far, int &min_t_idx, bool &min_t_with_sphere, double &alpha, double &beta)
+{
+	double min_t;
+	double this_alpha, this_beta;
+	double epsilon = 1e-8;
+
+	for (int triangle_idx = 0; triangle_idx < num_triangles; triangle_idx++)
+	{
+		MyVector n = get_triangle_normal(triangle_idx).normalize();
+		double nd = n.dot(direction);
+
+		if (nd < epsilon || epsilon < nd)
+		{
+			MyVector p0 = get_vertex_position(triangle_idx, 0);
+
+			min_t = n.dot(p0) / nd;
+			
+			// ray intersects a plane including the triangle
+			if (min_t > 0 && min_t < min_t_so_far)
+			{
+				if (intersectTriangle(triangle_idx, direction, min_t, MyVector(0, 0, 0), alpha, beta))
+				{
+					// Save minimum t value and the triangle index at the time
+					// Also save alpha and beta values
+					min_t_so_far = min_t;
+					min_t_idx = triangle_idx;
+					min_t_with_sphere = false;
+					this_alpha = alpha;
+					this_beta = beta;
+				}
+			}
+		}
+	}
+
+	// Put alpha and beta values back
+	alpha = this_alpha;
+	beta = this_beta;
+}
+
+Color evaluate_sphere_phong(MyVector direction, MyVector shadowRay, int light_idx, double min_t, int min_t_idx)
+{
+	double xc, yc, zc, radius;
+	MyVector normal, reflect;
+
+	// update variables with final result
+	get_sphere_info(min_t_idx, xc, yc, zc, radius);
+
+	// Calculate surface normal
+	normal = direction.mult(min_t).minus(MyVector(xc, yc, zc)).mult(1 / radius);
+
+	// Get reflection
+	reflect = get_reflectionVector(shadowRay, normal);
+
+	//Evaluate local phong model
+	double ln = shadowRay.dot(normal);
+	if (ln < 0) ln = 0.0; // if l dot n is negative, make it 0
+
+	Color diffuse = get_sphere_diffuse(min_t_idx).mult(ln);
+
+	double rv = reflect.dot(direction.neg());
+	if (rv < 0) rv = 0.0; // if r dot v is negative, make it 0
+	Color specular = get_sphere_specular(min_t_idx).mult(pow(rv, spheres[min_t_idx].shininess));
+
+	// Evaluate phong model
+	Color current = get_lightColor(light_idx).mult(diffuse.add(specular));
+	return current;//phong_light.add(current);
+}
+
+Color evaluate_triangle_phong(MyVector direction, MyVector shadowRay, int light_idx, int min_t_idx, double alpha, double beta)
+{
+	// Use interpolated normal
+	MyVector normal0, normal1, normal2;
+	get_vertex_normals(min_t_idx, normal0, normal1, normal2);
+
+	// below means normal = alpha * normal0 + beta * normal1 + (1-alpha-beta) * normal2
+	MyVector normal = normal0.mult(alpha).add(normal1.mult(beta)).add(normal2.mult(1-alpha-beta)).normalize();
+
+	MyVector reflect = get_reflectionVector(shadowRay, normal);
+
+	// kd's at each triangle vertex
+	Color v0_kd, v1_kd, v2_kd;
+	get_vertex_diffuses(min_t_idx, v0_kd, v1_kd, v2_kd);
+
+	// Get diffuse component
+	double ln = shadowRay.dot(normal);
+	if (ln < 0) ln = 0; // if l dot n is negative, make it 0
+	if (ln > 1) ln = 1.0;
+	Color kd = interpolate(v0_kd, v1_kd, v2_kd, alpha, beta, 1-alpha-beta);
+	Color diffuse = kd.mult(ln);;
+
+	// ks' at each riangle vertex
+	Color v0_ks, v1_ks, v2_ks;
+	get_vertex_speculars(min_t_idx, v0_ks, v1_ks, v2_ks);
+
+	// Get specular component
+	double rv = reflect.dot(direction.neg());
+	if (rv < 0) rv = 0.0; // if r dot v is negative, make it 0
+	if (rv > 1) rv = 1.0;
+	Color ks = interpolate(v0_ks, v1_ks, v2_ks, alpha, beta, 1-alpha-beta);
+
+	double shininesses[3] = { triangles[min_t_idx].v[0].shininess,
+								triangles[min_t_idx].v[1].shininess,
+								triangles[min_t_idx].v[2].shininess };
+	double interpolate_shi = alpha * shininesses[0] + beta * shininesses[1] + (1-alpha-beta) * shininesses[2];
+
+	Color specular = ks.mult(pow(rv, interpolate_shi));
+
+	// Evaluate phong model
+	Color light = get_lightColor(light_idx);
+	Color current = light.mult(diffuse.add(specular));
+	return current;//phong_light.add(current);
+}
+
+Color compute_phong_light(MyVector direction, bool min_t_with_sphere, double min_t, int min_t_idx, double alpha, double beta)
+{
+	int MIN_T_MAX = 1e8;
+	MyVector shadowRay;
+	Color phong_light, phong_lights;
+
+	if (min_t != MIN_T_MAX)
+	{
+		for (int light_idx = 0; light_idx < num_lights; light_idx++)
+		{
+			shadowRay = get_shadowRay(direction.mult(min_t), light_idx);
+	
+			// When shadow ray is not blocked, evaluate the phong model
+			if (!blocked(shadowRay, direction.mult(min_t), light_idx))
+			{
+				if (min_t_with_sphere) // Shading for a sphere
+				{
+					phong_light = phong_light.add(evaluate_sphere_phong(direction, shadowRay, light_idx, min_t, min_t_idx));
+				}
+				else // Shading for a triangle
+				{
+					phong_light = phong_light.add(evaluate_triangle_phong(direction, shadowRay, light_idx, min_t_idx, alpha, beta));
+				}
+			}
+		}
+	}
+	else // Set white background
+	{
+		Color white = Color(1.0, 1.0, 1.0);
+		phong_light = phong_light.add(white);
+	}
+	return phong_light;
+}
+
+Color send_ray(int x, int sub_x, int y, int sub_y)
+{
+	double MIN_T_MAX = 1e8;
+
+	double alpha, beta;
+
+	double min_t;
+	int min_t_idx;
+	double min_t_so_far = MIN_T_MAX;
+	bool min_t_with_sphere = true;
+
+	// Step 1: Fire a ray from COP
+	double del = 1 / NUM_SUBRAYS;
+	MyVector direction = get_directionRay(x + sub_x * del, y + sub_y * del);
+
+	// Step 2: Calculate closest intersection among objects
+	// Step 2-1: Check spheres
+	check_sphere_intersection(direction, min_t_so_far, min_t_idx);
+		        	
+	// Step 2-2: Check triangles
+	check_triangle_intersection(direction, min_t_so_far, min_t_idx, min_t_with_sphere, alpha, beta);
+
+	// update variables with final result
+	min_t = min_t_so_far;
+
+	// Step 3: For the closest intersection, color the pixel
+	return compute_phong_light(direction, min_t_with_sphere, min_t, min_t_idx, alpha, beta);
+}
+
 // Assign pixel values
 void draw_scene()
 {
-	double MIN_T_MAX = 10000;
-	MyVector direction, shadowRay, normal, reflect;
-	double b, c, xc, yc, zc, radius, root, t0, t1, min_t;
-	int min_t_idx;
-	double epsilon = 1e-8;
-
 	// Generate light sources for soft shadow
 	addLights();
 
-    for(unsigned int x=0; x<WIDTH; x++)
-    {
-        glPointSize(2.0);    
-        glBegin(GL_POINTS);
-        for(unsigned int y=0; y<HEIGHT; y++)
-        {
-        	// Use for summation of subrays to be used in antialiasing
-        	Color phong_lights;
+	for(unsigned int x=0; x<WIDTH; x++)
+	{
+		glPointSize(2.0);    
+		glBegin(GL_POINTS);
+		
+		for(unsigned int y=0; y<HEIGHT; y++)
+		{
+			// Use for summation of subrays to be used in antialiasing
+			Color phong_lights;
 
-        	// xx and yy are for antialiasing
-        	for (int xx = 0; xx < NUM_SUBRAYS; xx++)
-        	{
-        		for (int yy = 0; yy < NUM_SUBRAYS; yy++)
-        		{
-        			Color phong_light;
-		        	double min_t_so_far = MIN_T_MAX;
-		        	bool min_t_with_sphere = true;
-		        	double alpha, beta;
-		        	double this_alpha, this_beta;
+			// xx and yy are for antialiasing
+			for (int sub_x = 0; sub_x < NUM_SUBRAYS; sub_x++)
+			{
+				for (int sub_y = 0; sub_y < NUM_SUBRAYS; sub_y++)
+				{
+					Color phong_light = send_ray(x, sub_x, y, sub_y);
 
-		        	// Step 1: Fire a ray from COP
-		        	double del = 1 / NUM_SUBRAYS;
-		        	direction = get_directionRay(x + xx * del, y + yy * del);
+					// Sum up phong lights for antialiasing
+					phong_lights = phong_lights.add(phong_light);
+				}
+			}
 
-		        	// Step 2: Calculate closest intersection among objects --------------------------------------------------------
-		        	// Step 2-1: Check spheres
-		        	for (int idx = 0; idx < num_spheres; idx++)
-		        	{
-		        		//  Sphere center position and radius
-       					get_sphere_info(idx, xc, yc, zc, radius);
+			// Resulting color is a combination of phong lighting and ambient light
+			Color phong_sum = Color(phong_lights.r / pow(NUM_SUBRAYS, 2) + ambient_light[0],
+									phong_lights.g / pow(NUM_SUBRAYS, 2) + ambient_light[1],
+									phong_lights.b / pow(NUM_SUBRAYS, 2) + ambient_light[2]);
+			phong_sum.clamp();
 
-			        	b = -2.0 * (direction.x * xc + direction.y * yc + direction.z * zc);
-			        	c = pow(xc, 2.0) + pow(yc, 2.0) + pow(zc, 2.0) - pow(radius, 2.0);
+			plot_pixel(x, y, phong_sum.r * 255, phong_sum.g * 255, phong_sum.b * 255);
+		}
 
-			        	root = b * b - 4 * c;
-
-			        	// When there is at least a solution for t
-			        	if (root >= 0)
-			        	{
-			        		t0 = (- b + sqrt(root)) / 2.0;
-				        	t1 = (- b - sqrt(root)) / 2.0;
-
-				        	if (t0 > 0 && t1 > 0) min_t = min(t0, t1);
-				        	else if (t0 > 0) min_t = t0;
-				        	else if (t1 > 0) min_t = t1;
-				        	else continue;
-
-				        	if (min_t < min_t_so_far) 
-				        	{
-				        		// Save minimum t value and the sphere index at this time
-				        		min_t_so_far = min_t;
-				        		min_t_idx = idx;
-				        	}
-				        }
-		        	}
-		        	
-		        	// Step 2-2: Check triangles
-		        	for (int triangle_idx = 0; triangle_idx < num_triangles; triangle_idx++)
-		        	{
-		        		MyVector n = get_triangle_normal(triangle_idx).normalize();
-		        		double nd = n.dot(direction);
-
-		        		if (nd < epsilon || epsilon < nd)
-		        		{
-		        			MyVector p0 = get_vertex_position(triangle_idx, 0);
-
-		        			min_t = n.dot(p0) / nd;
-
-		        			// ray intersects a plane including the triangle
-		        			if (min_t > 0 && min_t < min_t_so_far)
-		        			{
-		        				if (intersectTriangle(triangle_idx, direction, min_t, MyVector(0, 0, 0), alpha, beta))
-					        	{
-					        		// Save minimum t value and the triangle index at the time
-					        		// Also save alpha and beta values
-					        		min_t_so_far = min_t;
-		        					min_t_idx = triangle_idx;
-		        					min_t_with_sphere = false;
-		        					this_alpha = alpha;
-		        					this_beta = beta;
-					        	}
-		        			}
-		        		}
-		        	}
-
-		        	// Put alpha and beta values back
-		        	alpha = this_alpha;
-		        	beta = this_beta;
-
-		        	// update variables with final result
-		        	min_t = min_t_so_far;
-
-		        	// end of get min t ---------------------------------------------------------------------------------------------
-
-		        	// Step 3: For the closest intersection, color the pixel
-		        	if (min_t != MIN_T_MAX)
-		        	{
-		        		for (int light_idx = 0; light_idx < num_lights; light_idx++)
-		        		{
-		        			shadowRay = get_shadowRay(direction.mult(min_t), light_idx);
-
-		        			// When shadow ray is not blocked, evaluate the phong model
-		        			if (!blocked(shadowRay, direction.mult(min_t), light_idx))
-		        			{
-		        				// Shading for a sphere
-						        if (min_t_with_sphere)
-						       	{
-						       		// update variables with final result
-						       		get_sphere_info(min_t_idx, xc, yc, zc, radius);
-
-						       		// Calculate surface normal
-						       		normal = direction.mult(min_t).minus(MyVector(xc, yc, zc)).mult(1 / radius);
-
-						        	// Get reflection
-						        	reflect = get_reflectionVector(shadowRay, normal);
-
-						       		//Evaluate local phong model
-						       		double ln = shadowRay.dot(normal);
-						       		if (ln < 0) ln = 0.0; // if l dot n is negative, make it 0
-
-						        	Color diffuse = get_sphere_diffuse(min_t_idx).mult(ln);
-
-						        	double rv = reflect.dot(direction.neg());
-						        	if (rv < 0) rv = 0.0; // if r dot v is negative, make it 0
-						        	Color specular = get_sphere_specular(min_t_idx).mult(pow(rv, spheres[min_t_idx].shininess));
-
-									// Evaluate phong model
-						        	Color current = get_lightColor(light_idx).mult(diffuse.add(specular));
-						        	phong_light = phong_light.add(current);
-						       	}
-						       	else // Shading for a triangle
-							    {
-							    	// Use interpolated normal
-							    	MyVector normal0, normal1, normal2;
-							    	get_vertex_normals(min_t_idx, normal0, normal1, normal2);
-
-							    	// below means normal = alpha * normal0 + beta * normal1 + (1-alpha-beta) * normal2
-							    	normal = normal0.mult(alpha).add(normal1.mult(beta)).add(normal2.mult(1-alpha-beta)).normalize();
-
-							        reflect = get_reflectionVector(shadowRay, normal);
-
-						        	// kd's at each triangle vertex
-							        Color v0_kd, v1_kd, v2_kd;
-							        get_vertex_diffuses(min_t_idx, v0_kd, v1_kd, v2_kd);
-
-							        // Get diffuse component
-							        double ln = shadowRay.dot(normal);
-						       		if (ln < 0) ln = 0; // if l dot n is negative, make it 0
-						       		if (ln > 1) ln = 1.0;
-						       		Color kd = interpolate(v0_kd, v1_kd, v2_kd, alpha, beta, 1-alpha-beta);
-						       		Color diffuse = kd.mult(ln);;
-
-						       		// ks' at each riangle vertex
-						       		Color v0_ks, v1_ks, v2_ks;
-						       		get_vertex_speculars(min_t_idx, v0_ks, v1_ks, v2_ks);
-
-						       		// Get specular component
-							        double rv = reflect.dot(direction.neg());
-							        if (rv < 0) rv = 0.0; // if r dot v is negative, make it 0
-							        if (rv > 1) rv = 1.0;
-							        Color ks = interpolate(v0_ks, v1_ks, v2_ks, alpha, beta, 1-alpha-beta);
-
-						       		double shininesses[3] = { triangles[min_t_idx].v[0].shininess,
-							        						  triangles[min_t_idx].v[1].shininess,
-							        						  triangles[min_t_idx].v[2].shininess };
-						       		double interpolate_shi = alpha * shininesses[0] + beta * shininesses[1] + (1-alpha-beta) * shininesses[2];
-
-						       		Color specular = ks.mult(pow(rv, interpolate_shi));
-
-						        	// Evaluate phong model
-						        	Color light = get_lightColor(light_idx);
-						        	Color current = light.mult(diffuse.add(specular));
-						        	phong_light = phong_light.add(current);
-							    }
-						    }
-		        		}
-		        	}
-		        	else // Set white background
-		        	{
-		        		Color white = Color(1.0, 1.0, 1.0);
-		        		phong_light = phong_light.add(white);
-		        	}
-
-		        	// Sum up phong lights for antialiasing
-		        	phong_lights = phong_lights.add(phong_light);
-        		}
-        	}
-
-        	// Resulting color is a combination of phong lighting and ambient light
-        	Color phong_sum = Color(phong_lights.r / pow(NUM_SUBRAYS, 2) + ambient_light[0],
-        							phong_lights.g / pow(NUM_SUBRAYS, 2) + ambient_light[1],
-        							phong_lights.b / pow(NUM_SUBRAYS, 2) + ambient_light[2]);
-        	phong_sum.clamp();
-
-        	plot_pixel(x, y, phong_sum.r * 255, phong_sum.g * 255, phong_sum.b * 255);
-        }
-        glEnd();
-        glFlush();
+		glEnd();
+		glFlush();
     }
 
     printf("Done!\n"); fflush(stdout);
@@ -895,9 +936,7 @@ int loadScene(char *argv)
     return 0;
 }
 
-void display()
-{
-}
+void display() {}
 
 void init()
 {
