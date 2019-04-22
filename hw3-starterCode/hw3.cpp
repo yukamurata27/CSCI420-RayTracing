@@ -38,18 +38,18 @@ using namespace std;
 
 char * filename = NULL;
 
-//different display modes
+// different display modes
 #define MODE_DISPLAY 1
 #define MODE_JPEG 2
 
 int mode = MODE_DISPLAY;
 
-//you may want to make these smaller for debugging purposes
+// you may want to make these smaller for debugging purposes
 #define WIDTH 640
 #define HEIGHT 480
 double aspect_ratio = ((double) WIDTH) / ((double)HEIGHT);
 
-//the field of view of the camera
+// the field of view of the camera
 #define fov 60.0
 
 #define PI 3.14159265
@@ -57,6 +57,9 @@ double aspect_ratio = ((double) WIDTH) / ((double)HEIGHT);
 // variables for soft shadow and antialiasing
 #define NUM_ADDITIONAL_LIGHTS 16.0
 #define NUM_SUBRAYS 2.0
+
+// furthest solution t
+#define MIN_T_MAX 1e8
 
 unsigned char buffer[HEIGHT][WIDTH][3];
 
@@ -685,16 +688,33 @@ Color evaluate_triangle_phong(MyVector direction, MyVector shadowRay, int light_
 	return current;//phong_light.add(current);
 }
 
+/**
+ * compute_phong_light
+ *
+ * @param direction - direction vector
+ * @param min_t_with_sphere - closest intersection on sphere?
+ * @param min_t - minimum t value
+ * @param min_t_idx - sphere or triangle index when min_t
+ * @param alpha - alpha value of barycentric coordinates
+ * @param beta - beta value of barycentric coordinates
+ *
+ * Evaluate phong model at the closest intersection
+ * by checking all the directions to light sources
+ * Return Phong model for the ray
+ */
 Color compute_phong_light(MyVector direction, bool min_t_with_sphere, double min_t, int min_t_idx, double alpha, double beta)
 {
-	int MIN_T_MAX = 1e8;
+	// local variables
 	MyVector shadowRay;
-	Color phong_light, phong_lights;
+	Color phong_light;
 
+	// If a ray intersects with an object
 	if (min_t != MIN_T_MAX)
 	{
+		// Check all possible light directions
 		for (int light_idx = 0; light_idx < num_lights; light_idx++)
 		{
+			// shadow ray is a ray from intersection to a light
 			shadowRay = get_shadowRay(direction.mult(min_t), light_idx);
 	
 			// When shadow ray is not blocked, evaluate the phong model
@@ -719,41 +739,49 @@ Color compute_phong_light(MyVector direction, bool min_t_with_sphere, double min
 	return phong_light;
 }
 
+/**
+ * send_ray
+ *
+ * @param x - range of [0, WIDTH-1]
+ * @param sub_x - range of [0, NUM_SUBRAYS-1]
+ * @param y - range of [0, HEIGHT-1]
+ * @param sub_y - range of [0, NUM_SUBRAYS-1]
+ *
+ * Shoot a ray and evaluate phong model
+ * Return a phong light of the ray
+ */
 Color send_ray(int x, int sub_x, int y, int sub_y)
 {
-	double MIN_T_MAX = 1e8;
-
+	// local variables
 	double alpha, beta;
-
 	double min_t;
-	int min_t_idx;
 	double min_t_so_far = MIN_T_MAX;
+	int min_t_idx;
 	bool min_t_with_sphere = true;
 
 	// Step 1: Fire a ray from COP
-	double del = 1 / NUM_SUBRAYS;
+	double del = 1 / NUM_SUBRAYS; // delta width between each subray
 	MyVector direction = get_directionRay(x + sub_x * del, y + sub_y * del);
 
 	// Step 2: Calculate closest intersection among objects
-	// Step 2-1: Check spheres
 	check_sphere_intersection(direction, min_t_so_far, min_t_idx);
-		        	
-	// Step 2-2: Check triangles
 	check_triangle_intersection(direction, min_t_so_far, min_t_idx, min_t_with_sphere, alpha, beta);
+	min_t = min_t_so_far; // update value
 
-	// update variables with final result
-	min_t = min_t_so_far;
-
-	// Step 3: For the closest intersection, color the pixel
+	// Step 3: For the closest intersection, evaluate phong model
 	return compute_phong_light(direction, min_t_with_sphere, min_t, min_t_idx, alpha, beta);
 }
 
-// Assign pixel values
+/**
+ * draw_scene
+ * Shoot a ray to evaluate phong model and plot pixels
+ */
 void draw_scene()
 {
-	// Generate light sources for soft shadow
+	// Generate additional light sources for soft shadow
 	addLights();
 
+	// Iterate pixel by pixel
 	for(unsigned int x=0; x<WIDTH; x++)
 	{
 		glPointSize(2.0);    
@@ -761,27 +789,28 @@ void draw_scene()
 		
 		for(unsigned int y=0; y<HEIGHT; y++)
 		{
-			// Use for summation of subrays to be used in antialiasing
-			Color phong_lights;
+			Color phong_lights; // Sum of sub phong lights
 
-			// xx and yy are for antialiasing
+			// sub rays for antialiasing
 			for (int sub_x = 0; sub_x < NUM_SUBRAYS; sub_x++)
 			{
 				for (int sub_y = 0; sub_y < NUM_SUBRAYS; sub_y++)
 				{
+					// Evaluate phong light of the ray
 					Color phong_light = send_ray(x, sub_x, y, sub_y);
 
-					// Sum up phong lights for antialiasing
+					// Sum up sub phong light to
 					phong_lights = phong_lights.add(phong_light);
 				}
 			}
 
-			// Resulting color is a combination of phong lighting and ambient light
+			// Fianl color = ave(diffuse + specular lights) + ambient light
 			Color phong_sum = Color(phong_lights.r / pow(NUM_SUBRAYS, 2) + ambient_light[0],
 									phong_lights.g / pow(NUM_SUBRAYS, 2) + ambient_light[1],
 									phong_lights.b / pow(NUM_SUBRAYS, 2) + ambient_light[2]);
-			phong_sum.clamp();
+			phong_sum.clamp(); // clamp phong light in [0, 1]
 
+			// Plot pixel with the phong light
 			plot_pixel(x, y, phong_sum.r * 255, phong_sum.g * 255, phong_sum.b * 255);
 		}
 
@@ -789,7 +818,8 @@ void draw_scene()
 		glFlush();
     }
 
-    printf("Done!\n"); fflush(stdout);
+    printf("Ray Tracying Completed!\n");
+    fflush(stdout);
 }
 
 void plot_pixel_display(int x, int y, unsigned char r, unsigned char g, unsigned char b)
